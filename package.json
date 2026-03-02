@@ -1,0 +1,42 @@
+{
+  "name": "thinkncollab-shell",
+  "version": "0.0.1",
+  "description": "ThinkNCollab Custom Shell with WebSocket collaboration",
+  "main": "src/core/shell.js",
+  "bin": {
+    "thinknsh": "./bin/thinknsh.js",
+    "tnc": "./bin/thinknsh.js"
+  },
+  "scripts": {
+    "start": "node bin/thinknsh.js",
+    "dev": "nodemon bin/thinknsh.js",
+    "test": "jest",
+    "prepublishOnly": ""
+  },
+  "keywords": [
+    "shell",
+    "terminal",
+    "websocket",
+    "collaboration",
+    "cli"
+  ],
+  "author": "ThinkNCollab",
+  "license": "MIT",
+  "dependencies": {
+    "socket.io-client": "^4.7.2",
+    "chalk": "^4.1.2",
+    "fs-extra": "^11.1.1",
+    "inquirer": "^8.2.6",
+    "os-locale": "^6.0.2",
+    "node-machine-id": "^1.1.12",
+    "figlet": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md"
+  ]
+}
