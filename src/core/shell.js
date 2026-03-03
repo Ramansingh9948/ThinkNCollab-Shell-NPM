@@ -11,49 +11,63 @@ const chalk = require('chalk');
 const { exec, spawn } = require('child_process');
 const WebSocketManager = require('./websocket');
 const EventEmitter = require('events');
+const CommandRegistry = require('../commands');
+const ThinkNCollabAPI = require('./api-client');
 
 class ThinkNCollabShell extends EventEmitter {
-    constructor(options = {}) {
-        super();
-        
-        // Configuration
-        this.config = {
-            historyFile: path.join(os.homedir(), '.thinknsh_history'),
-            configDir: path.join(os.homedir(), '.thinkncollab'),
-            maxHistory: 1000,
-            prompt: options.prompt || 'thinknsh> ',
-            websocket: {
-                serverUrl: options.serverUrl || 'https://api.thinkncollab.com',
-                autoConnect: options.autoConnect || false
-            },
-            ...options
-        };
-        
-        // Ensure config directory exists
-        fs.ensureDirSync(this.config.configDir);
-        
-        // Initialize components
-        this.ws = new WebSocketManager(this.config.websocket);
-        this.rl = null;
-        this.currentDir = process.cwd();
-        this.username = os.userInfo().username;
-        this.hostname = os.hostname();
-        this.history = [];
-        this.commands = new Map();
-        this.aliases = new Map();
-        this.variables = new Map();
-        this.isTyping = false;
-        this.typingTimeout = null;
-        
-        // Load history
-        this.loadHistory();
-        
-        // Register built-in commands
-        this.registerBuiltinCommands();
-        
-        // Setup WebSocket event handlers
-        this.setupWebSocketHandlers();
-    }
+constructor(options = {}) {
+    super();
+    
+    // Configuration
+    this.config = {
+        historyFile: path.join(os.homedir(), '.thinknsh_history'),
+        configDir: path.join(os.homedir(), '.thinkncollab'),
+        maxHistory: 1000,
+        prompt: options.prompt || 'thinknsh> ',
+        websocket: {
+            serverUrl: options.serverUrl || 'https://api.thinkncollab.com',
+            autoConnect: options.autoConnect || false
+        },
+        ...options
+    };
+    
+    // Ensure config directory exists
+    fs.ensureDirSync(this.config.configDir);
+    
+    // Initialize components
+    this.ws = new WebSocketManager(this.config.websocket);
+    this.rl = null;
+    this.currentDir = process.cwd();
+    this.username = os.userInfo().username;
+    this.hostname = os.hostname();
+    this.history = [];
+    
+    // ✅ FIX: Initialize API first
+    this.api = new ThinkNCollabAPI({
+        apiUrl: options.apiUrl || 'http://localhost:3001',
+        wsUrl: options.wsUrl || 'http://localhost:3001'
+    });
+    
+    // ✅ FIX: Remove these lines - they're causing duplication!
+    this.commands = new Map();      //  ← REMOVE THIS
+    this.aliases = new Map();      //   ← REMOVE THIS
+    
+    this.variables = new Map();
+    this.isTyping = false;
+    this.typingTimeout = null;
+    
+    // Load history
+    this.loadHistory();
+    
+    // ✅ FIX: Register built-in commands FIRST
+    this.registerBuiltinCommands();
+    
+    // ✅ FIX: THEN initialize command registry (this will have its own Map)
+    this.commandRegistry = new CommandRegistry(this);  // ← Use different name!
+    
+    // Setup WebSocket event handlers
+    this.setupWebSocketHandlers();
+}
     
     /**
      * Setup WebSocket event handlers
@@ -162,48 +176,79 @@ class ThinkNCollabShell extends EventEmitter {
 async execute(input) {
     if (!input.trim()) return;
     
-    // Parse command with quote support
-    const args = this.parseCommand(input);
-    const command = args[0].toLowerCase();
-    const commandArgs = args.slice(1);
+    console.log(chalk.yellow(`\n🔍 DEBUG ==========`));
+    console.log(chalk.yellow(`Input: "${input}"`));
     
     // Add to history
     this.history.push(input);
     this.saveHistory();
     
     // Handle typing indicator
-    this.handleTyping();
+    // this.handleTyping();
     
-    // Check for variable assignment (e.g., VAR=value)
-    if (command.includes('=') && args.length === 1) {
-        this.setVariable(command);
-        return;
+    const args = this.parseCommand(input);
+    const cmdName = args[0].toLowerCase();
+    
+    console.log(chalk.yellow(`Command name: "${cmdName}"`));
+    
+    // Check if command exists in system commands
+    console.log(chalk.yellow(`System commands:`, Array.from(this.systemCommands?.keys() || [])));
+    
+    // Check if command exists in registry
+    if (this.commandRegistry) {
+        const registryCommands = Array.from(this.commandRegistry.commands?.keys() || []);
+        console.log(chalk.yellow(`Registry commands:`, registryCommands));
     }
     
-    // Check for alias
-    if (this.aliases.has(command)) {
-        const aliasCmd = this.aliases.get(command);
-        // Preserve original args when expanding alias
-        return this.execute(aliasCmd + (commandArgs.length ? ' ' + commandArgs.join(' ') : ''));
-    }
-    
-    // Check built-in commands
-    if (this.commands.has(command)) {
+    // Try system commands first
+    if (this.systemCommands && this.systemCommands.has(cmdName)) {
+        console.log(chalk.green(`✅ Found in system commands`));
+        const cmd = this.systemCommands.get(cmdName);
         try {
-            const cmd = this.commands.get(command);
-            const result = await cmd.handler(commandArgs, this);
-            if (result !== undefined) {
-                console.log(result);
-            }
+            const result = await cmd.handler(args.slice(1), this);
+            if (result !== undefined) console.log(result);
         } catch (error) {
             console.log(chalk.red(`Error: ${error.message}`));
         }
         return;
     }
     
-    // Execute system command
+    // Try registry commands
+    if (this.commandRegistry) {
+        console.log(chalk.yellow(`Trying command registry...`));
+        const handled = await this.commandRegistry.execute(input, this);
+        console.log(chalk.yellow(`Registry handled: ${handled}`));
+        
+        if (handled) {
+            return;
+        }
+    }
+    
+    // If not handled, run as system command
+    console.log(chalk.red(`❌ Command not found, running as system command`));
     await this.executeSystemCommand(input);
 }
+    
+    /**
+     * Helper to get session path - ADD THIS METHOD
+     */
+    getSessionPath() {
+        return path.join(this.config.configDir, 'session.json');
+    }
+    
+    /**
+     * Print message without breaking prompt - ADD THIS METHOD
+     */
+    printMessage(message) {
+        if (this.rl) {
+            readline.clearLine(process.stdout, 0);
+            readline.cursorTo(process.stdout, 0);
+            console.log(message);
+            this.rl.prompt(true);
+        } else {
+            console.log(message);
+        }
+    }
     /**
      * Register built-in commands
      */
@@ -903,7 +948,7 @@ async cdCommand(args) {
         
         console.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════╗
-║     ThinkNCollab Shell v1.0.0                        ║
+║     ThinkNCollab Shell v0.0.01                        ║
 ║     Type 'help' for commands                          ║
 ╚══════════════════════════════════════════════════════╝
         `));
