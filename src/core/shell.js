@@ -176,36 +176,22 @@ constructor(options = {}) {
 async execute(input) {
     if (!input.trim()) return;
     
-    console.log(chalk.yellow(`\n🔍 DEBUG ==========`));
-    console.log(chalk.yellow(`Input: "${input}"`));
-    
     // Add to history
     this.history.push(input);
     this.saveHistory();
     
-    // Handle typing indicator
-    // this.handleTyping();
-    
     const args = this.parseCommand(input);
     const cmdName = args[0].toLowerCase();
+    const cmdArgs = args.slice(1);
     
-    console.log(chalk.yellow(`Command name: "${cmdName}"`));
+    // DEBUG
+    console.log(chalk.dim(`[Exec] Command: ${cmdName}`));
     
-    // Check if command exists in system commands
-    console.log(chalk.yellow(`System commands:`, Array.from(this.systemCommands?.keys() || [])));
-    
-    // Check if command exists in registry
-    if (this.commandRegistry) {
-        const registryCommands = Array.from(this.commandRegistry.commands?.keys() || []);
-        console.log(chalk.yellow(`Registry commands:`, registryCommands));
-    }
-    
-    // Try system commands first
+    // Check system commands first (cd, ls, etc.)
     if (this.systemCommands && this.systemCommands.has(cmdName)) {
-        console.log(chalk.green(`✅ Found in system commands`));
         const cmd = this.systemCommands.get(cmdName);
         try {
-            const result = await cmd.handler(args.slice(1), this);
+            const result = await cmd.handler(cmdArgs, this);
             if (result !== undefined) console.log(result);
         } catch (error) {
             console.log(chalk.red(`Error: ${error.message}`));
@@ -213,19 +199,13 @@ async execute(input) {
         return;
     }
     
-    // Try registry commands
+    // Check registry commands
     if (this.commandRegistry) {
-        console.log(chalk.yellow(`Trying command registry...`));
         const handled = await this.commandRegistry.execute(input, this);
-        console.log(chalk.yellow(`Registry handled: ${handled}`));
-        
-        if (handled) {
-            return;
-        }
+        if (handled) return;
     }
     
-    // If not handled, run as system command
-    console.log(chalk.red(`❌ Command not found, running as system command`));
+    // If not a built-in command, run as system command
     await this.executeSystemCommand(input);
 }
     

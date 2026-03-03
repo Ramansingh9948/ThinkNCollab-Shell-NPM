@@ -27,18 +27,15 @@ class ThinkNCollabAPI extends EventEmitter {
 // src/core/api-client.js
 async login(email, password) {
     try {
-        console.log(chalk.dim(`API call: ${this.config.apiUrl}/thinknsh/login`));
-        
         const response = await axios.post(`${this.config.apiUrl}/thinknsh/login`, {
-            email,
-            password
         }, {
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'x-email': email,
+                'x-password': password
+
             }
         });
-        
-        console.log(chalk.dim('API response:', response.data));
         
         if (response.data.shellToken) {
             this.token = response.data.shellToken;
@@ -47,18 +44,14 @@ async login(email, password) {
                 name: response.data.name || email.split('@')[0]
             };
             
-            // WebSocket connect
-            this.connectWebSocket();
-            
             return {
                 success: true,
                 user: this.user,
-                token: this.token
+                token: this.shellToken
             };
         }
         throw new Error(response.data.error || 'Login failed');
     } catch (error) {
-        console.error(chalk.red('API error:'), error.message);
         throw new Error(error.response?.data?.error || error.message);
     }
 }
