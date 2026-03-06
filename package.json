@@ -1,6 +1,6 @@
 {
   "name": "thinkncollab-shell",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "description": "ThinkNCollab Custom Shell with WebSocket collaboration",
   "main": "src/core/shell.js",
   "bin": {
@@ -23,6 +23,8 @@
   "author": "ThinkNCollab",
   "license": "MIT",
   "dependencies": {
+    "@inquirer/prompts": "^2.3.1",
+    "blessed": "^0.1.81",
     "chalk": "^4.1.2",
     "cli-table3": "^0.6.5",
     "figlet": "^1.6.0",
@@ -30,7 +32,7 @@
     "inquirer": "^8.2.6",
     "node-machine-id": "^1.1.12",
     "os-locale": "^6.0.2",
-    "socket.io-client": "^4.7.2"
+    "socket.io-client": "^4.8.3"
   },
   "engines": {
     "node": ">=14.0.0"

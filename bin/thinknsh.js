@@ -45,9 +45,10 @@ if (args.includes('--version') || args.includes('-v')) {
     process.exit(0);
 }
 
-// Create and start shell
 const shell = new ThinkNCollabShell({
-    serverUrl: process.env.THINKNCOLLAB_SERVER || 'http://localhost:3001/thinknsh',
+    serverUrl:   process.env.THINKNCOLLAB_SERVER    || 'http://localhost:3001',  // ← /thinknsh hata
+    apiUrl:      process.env.THINKNCOLLAB_API_URL   || 'http://localhost:3001',
+    wsUrl:       process.env.THINKNCOLLAB_WS_URL    || 'http://localhost:3001',
     autoConnect: process.env.THINKNCOLLAB_AUTO_CONNECT === 'true'
 });
 

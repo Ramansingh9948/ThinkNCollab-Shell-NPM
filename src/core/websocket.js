@@ -1,6 +1,6 @@
 /**
  * WebSocket Manager for ThinkNCollab Shell
- * Handles all real-time communication
+ * Uses thinknsh: prefixed events for terminal-specific communication
  */
 
 const { io } = require('socket.io-client');
@@ -9,377 +9,315 @@ const EventEmitter = require('events');
 class WebSocketManager extends EventEmitter {
     constructor(config = {}) {
         super();
-        
+
         this.config = {
-            serverUrl: config.serverUrl || 'https://api.thinkncollab.com',
+            serverUrl:         config.serverUrl         || 'https://thinkncollab.com',
             reconnectAttempts: config.reconnectAttempts || 5,
-            reconnectDelay: config.reconnectDelay || 1000,
-            autoConnect: config.autoConnect || false,
+            reconnectDelay:    config.reconnectDelay    || 1000,
             ...config
         };
-        
-        this.socket = null;
-        this.connected = false;
-        this.userId = null;
-        this.roomId = null;
+
+        this.socket         = null;
+        this.connected      = false;
+        this.currentUser    = null;  // { userId, name, userType }
+        this.roomId         = null;
         this.reconnectCount = 0;
-        this.pendingMessages = [];
-        this.messageQueue = [];
-        
-        // Bind methods
-        this.connect = this.connect.bind(this);
-        this.disconnect = this.disconnect.bind(this);
-        this.joinRoom = this.joinRoom.bind(this);
-        this.leaveRoom = this.leaveRoom.bind(this);
-        this.sendMessage = this.sendMessage.bind(this);
-        this.sendNotification = this.sendNotification.bind(this);
+        this.messageQueue   = [];
     }
-    
-    /**
-     * Connect to WebSocket server
-     */
+
+    // ─── Connect ──────────────────────────────────────────────────────────────
+
     connect(authToken = null) {
         return new Promise((resolve, reject) => {
             try {
-                const options = {
-                    transports: ['websocket', 'polling'],
-                    reconnection: true,
+                // Connect to /thinknsh namespace — isolated from web
+                this.socket = io(this.config.serverUrl + '/thinknsh', {
+                    transports:           ['websocket', 'polling'],
+                    reconnection:         true,
                     reconnectionAttempts: this.config.reconnectAttempts,
-                    reconnectionDelay: this.config.reconnectDelay,
-                    query: {}
-                };
-                
-                if (authToken) {
-                    options.query.token = authToken;
-                }
-                
-                this.socket = io(this.config.serverUrl, options);
-                
-                // Connection established
+                    reconnectionDelay:    this.config.reconnectDelay,
+                    auth: authToken ? { token: authToken } : {},
+                });
+
+                const timeout = setTimeout(() => reject(new Error('Connection timeout')), 10000);
+
                 this.socket.on('connect', () => {
-                    this.connected = true;
+                    clearTimeout(timeout);
+                    this.connected      = true;
                     this.reconnectCount = 0;
-                    this.userId = this.socket.id;
-                    
-                    // Process any pending messages
+                    this._authToken     = authToken;
+
+                    // Announce terminal to backend — join personal notification room
+                    if (this.currentUser) {
+                        console.log('🖥️  Emitting thinknsh:connected for', this.currentUser.userId);
+                        this.socket.emit('thinknsh:connected', {
+                            userId:     this.currentUser.userId,
+                            userName:   this.currentUser.name,
+                            shellToken: authToken,
+                        });
+                    }
+
                     this.processPendingMessages();
-                    
                     this.emit('connected', { socketId: this.socket.id });
                     resolve({ success: true, socketId: this.socket.id });
                 });
-                
-                // Connection error
+
                 this.socket.on('connect_error', (error) => {
-                    this.emit('error', { type: 'connection', error: error.message });
-                    
-                    if (this.reconnectCount >= this.config.reconnectAttempts) {
-                        reject(new Error(`Failed to connect after ${this.config.reconnectAttempts} attempts`));
+                    clearTimeout(timeout);
+                    if (this.reconnectCount === 0) {
+                        reject(new Error(`Cannot connect to ${this.config.serverUrl}`));
                     }
                     this.reconnectCount++;
+                    this.emit('error', { message: error.message });
                 });
-                
-                // Disconnection
+
                 this.socket.on('disconnect', (reason) => {
                     this.connected = false;
                     this.emit('disconnected', { reason });
-                    
-                    if (reason === 'io server disconnect') {
-                        // Server disconnected, don't reconnect
-                        this.socket = null;
-                    }
                 });
-                
-                // Reconnection
+
                 this.socket.on('reconnect', (attemptNumber) => {
                     this.connected = true;
                     this.emit('reconnected', { attemptNumber });
-                    
-                    // Rejoin room if we were in one
-                    if (this.roomId) {
-                        this.joinRoom(this.roomId);
+                    // Rejoin room after reconnect
+                    if (this.roomId && this.currentUser) {
+                        this._emitJoin(this.roomId);
                     }
                 });
-                
-                // Custom event handlers
-                this.setupEventHandlers();
-                
+
+                this.setupEventHandlers(authToken);
+
             } catch (error) {
                 reject(error);
             }
         });
     }
-    
-    /**
-     * Setup custom event handlers
-     */
-    setupEventHandlers() {
-        // Room events
-        this.socket.on('room:joined', (data) => {
+
+    // ─── thinknsh: event handlers ─────────────────────────────────────────────
+
+    setupEventHandlers(authToken) {
+
+        // Terminal ready confirmed by server
+        this.socket.on('thinknsh:ready', (data) => {
+            this.emit('ready', data);
+        });
+
+        // Room join confirmed
+        this.socket.on('thinknsh:joined', (data) => {
             this.roomId = data.roomId;
             this.emit('roomJoined', data);
         });
-        
-        this.socket.on('room:left', (data) => {
-            this.roomId = null;
-            this.emit('roomLeft', data);
+
+        // Incoming message from terminal or web
+        this.socket.on('thinknsh:message', (data) => {
+            this.emit('message', {
+                username:  data.name,
+                userId:    data.userId,
+                message:   data.message,
+                source:    data.source || 'web',
+                timestamp: data.timestamp,
+            });
         });
-        
-        this.socket.on('room:participants', (data) => {
-            this.emit('roomParticipants', data);
+
+        // Also listen to standard chat-message (from web users)
+        this.socket.on('chat-message', (data) => {
+            this.emit('message', {
+                username:  data.name,
+                userId:    data.userId,
+                message:   data.message,
+                source:    data.source || 'web',
+                timestamp: data.timestamp,
+            });
         });
-        
-        // Message events
-        this.socket.on('message:new', (data) => {
-            this.emit('message', data);
+
+        // User joined from terminal
+        this.socket.on('thinknsh:userJoined', (data) => {
+            this.emit('userJoined', { username: data.name, source: 'shell' });
         });
-        
-        this.socket.on('message:history', (data) => {
-            this.emit('messageHistory', data);
+
+        // User joined from web
+        this.socket.on('user-joined', (name) => {
+            this.emit('userJoined', { username: name, source: 'web' });
         });
-        
-        // User events
-        this.socket.on('user:joined', (data) => {
-            this.emit('userJoined', data);
+
+        // User left
+        this.socket.on('user-left', (name) => {
+            this.emit('userLeft', { username: name });
         });
-        
-        this.socket.on('user:left', (data) => {
-            this.emit('userLeft', data);
+
+        // User list updated
+        this.socket.on('user-list', (users) => {
+            this.emit('userList', { users });
         });
-        
-        this.socket.on('user:typing', (data) => {
-            this.emit('userTyping', data);
+
+        // Notifications from NotificationEngine
+        this.socket.on('new-notification', (notification) => {
+            this.emit('notification', {
+                type:    notification.type    || 'info',
+                title:   notification.type    || 'Notification',
+                message: notification.message || '',
+                meta:    notification.meta    || {},
+            });
         });
-        
-        // Notification events
-        this.socket.on('notification', (data) => {
-            this.emit('notification', data);
+
+        // Terminal status (online/offline) — website sends this
+        this.socket.on('thinknsh:status', (data) => {
+            this.emit('shellStatus', data);
         });
-        
-        // Terminal sharing events
-        this.socket.on('terminal:output', (data) => {
-            this.emit('terminalOutput', data);
+
+        // ── new-notification from NotificationEngine → forward to TCP window ──
+        this.socket.on('new-notification', (data) => {
+            // This goes to shell.js pushNotification → TCP → notification window
+            this.emit('notification', {
+                type:    data.type    || 'notification',
+                level:   data.type   || 'info',
+                title:   data.type   || 'Notification',
+                message: data.message || '',
+                taskTitle:  data.taskTitle  || data.meta?.taskTitle  || '',
+                assignedBy: data.assignedBy || data.meta?.assignedBy || '',
+            });
         });
-        
-        this.socket.on('terminal:command', (data) => {
-            this.emit('terminalCommand', data);
+
+        // Notification list response
+        this.socket.on('thinknsh:notifications', (data) => {
+            this.emit('notificationList', data.notifications);
         });
-        
-        // Error events
+
+        // Error from server
+        this.socket.on('thinknsh:error', (data) => {
+            this.emit('serverError', data);
+        });
+
         this.socket.on('error', (data) => {
             this.emit('serverError', data);
         });
     }
-    
-    /**
-     * Disconnect from WebSocket server
-     */
-    disconnect() {
-        if (this.socket) {
-            this.socket.disconnect();
-            this.socket = null;
-            this.connected = false;
-            this.userId = null;
-            this.roomId = null;
-            this.emit('disconnected', { reason: 'manual' });
+
+    // ─── Set user (call after login) ──────────────────────────────────────────
+
+    setUser(user, token = null) {
+        this.currentUser = user;
+        // If already connected, announce now
+        if (this.connected && this.socket) {
+            this.socket.emit('thinknsh:connected', {
+                userId:     user.userId,
+                shellToken: token,
+            });
         }
     }
-    
-    /**
-     * Join a collaboration room
-     */
-    joinRoom(roomId, password = null) {
+
+    // ─── Join room ────────────────────────────────────────────────────────────
+
+    joinRoom(roomId) {
         return new Promise((resolve, reject) => {
-            if (!this.connected || !this.socket) {
-                reject(new Error('WebSocket not connected'));
-                return;
-            }
-            
-            const payload = { roomId };
-            if (password) payload.password = password;
-            
-            this.socket.emit('room:join', payload);
-            
-            // Wait for response
-            const timeout = setTimeout(() => {
-                reject(new Error('Join room timeout'));
-            }, 5000);
-            
-            this.socket.once('room:joined', (data) => {
+            if (!this.connected || !this.socket) return reject(new Error('Not connected'));
+            if (!this.currentUser)               return reject(new Error('Not logged in'));
+
+            const timeout = setTimeout(() => reject(new Error('Join timeout')), 5000);
+
+            this.socket.once('thinknsh:joined', (data) => {
                 clearTimeout(timeout);
                 this.roomId = data.roomId;
                 resolve(data);
             });
-            
-            this.socket.once('room:error', (data) => {
-                clearTimeout(timeout);
-                reject(new Error(data.message));
-            });
+
+            this._emitJoin(roomId);
         });
     }
-    
-    /**
-     * Leave current room
-     */
+
+    _emitJoin(roomId) {
+        this.socket.emit('thinknsh:join', {
+            roomId,
+            userId:   this.currentUser.userId,
+            name:     this.currentUser.name,
+            userType: this.currentUser.userType || 'User',
+        });
+    }
+
+    // ─── Leave room ───────────────────────────────────────────────────────────
+
     leaveRoom() {
-        if (!this.connected || !this.socket || !this.roomId) {
-            return Promise.reject(new Error('Not in a room'));
-        }
-        
-        return new Promise((resolve) => {
-            this.socket.emit('room:leave', { roomId: this.roomId });
+        if (this.socket && this.roomId) {
+            this.socket.emit('leave-room', { roomId: this.roomId });
             this.roomId = null;
-            resolve({ success: true });
-        });
-    }
-    
-    /**
-     * Send message to current room
-     */
-    sendMessage(message, type = 'text') {
-        if (!this.connected || !this.socket) {
-            // Queue message for later
-            this.messageQueue.push({ message, type });
-            return Promise.resolve({ queued: true });
         }
-        
-        if (!this.roomId) {
-            return Promise.reject(new Error('Not in a room'));
-        }
-        
-        return new Promise((resolve) => {
-            const payload = {
-                roomId: this.roomId,
-                message,
-                type,
-                timestamp: new Date().toISOString()
-            };
-            
-            this.socket.emit('message:send', payload);
-            resolve({ success: true, id: `msg_${Date.now()}` });
-        });
-    }
-    
-    /**
-     * Send notification to room/users
-     */
-    sendNotification(notification, target = 'room') {
-        if (!this.connected || !this.socket) {
-            return Promise.reject(new Error('WebSocket not connected'));
-        }
-        
-        const payload = {
-            type: notification.type || 'info',
-            title: notification.title,
-            message: notification.message,
-            data: notification.data,
-            target: target === 'room' ? this.roomId : target,
-            timestamp: new Date().toISOString()
-        };
-        
-        this.socket.emit('notification:send', payload);
-        
         return Promise.resolve({ success: true });
     }
-    
-    /**
-     * Share terminal output with room
-     */
-    shareTerminalOutput(command, output) {
-        if (!this.connected || !this.socket || !this.roomId) {
-            return;
+
+    // ─── Send message ─────────────────────────────────────────────────────────
+
+    sendMessage(message) {
+        if (!this.connected || !this.socket) {
+            this.messageQueue.push(message);
+            return Promise.resolve({ queued: true });
         }
-        
-        this.socket.emit('terminal:share', {
-            roomId: this.roomId,
-            command,
-            output,
-            timestamp: new Date().toISOString()
+        if (!this.roomId)      return Promise.reject(new Error('Not in a room — run: join <room-id>'));
+        if (!this.currentUser) return Promise.reject(new Error('Not logged in — run: login'));
+
+        this.socket.emit('thinknsh:message', {
+            roomId:   this.roomId,
+            userId:   this.currentUser.userId,
+            name:     this.currentUser.name,
+            userType: this.currentUser.userType || 'User',
+            message,
+        });
+
+        return Promise.resolve({ success: true });
+    }
+
+    // ─── Get unread notifications ─────────────────────────────────────────────
+
+    getNotifications() {
+        if (!this.connected || !this.currentUser) return;
+        this.socket.emit('thinknsh:getNotifications', { userId: this.currentUser.userId });
+    }
+
+    markNotificationsRead(notificationIds = []) {
+        if (!this.connected || !this.currentUser) return;
+        this.socket.emit('thinknsh:markRead', {
+            userId: this.currentUser.userId,
+            notificationIds,
         });
     }
-    
-    /**
-     * Send typing indicator
-     */
-    sendTyping(isTyping = true) {
-        if (!this.connected || !this.socket || !this.roomId) {
-            return;
-        }
-        
-        this.socket.emit('user:typing', {
-            roomId: this.roomId,
-            isTyping
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    joinUserRoom(userId) {
+        if (!this.socket || !userId) return;
+        this.socket.emit('thinknsh:connected', {
+            userId,
+            userName:   this.currentUser?.name || '',
+            shellToken: this._token || null,
         });
     }
-    
-    /**
-     * Get room participants
-     */
-    getParticipants() {
-        if (!this.connected || !this.socket || !this.roomId) {
-            return Promise.reject(new Error('Not connected to a room'));
-        }
-        
-        return new Promise((resolve) => {
-            this.socket.emit('room:getParticipants', { roomId: this.roomId });
-            
-            this.socket.once('room:participants', (data) => {
-                resolve(data.participants);
-            });
-        });
+
+    sendTyping() {}  // add later if needed
+
+    ping() {
+        if (this.connected && this.socket) this.socket.emit('ping');
     }
-    
-    /**
-     * Get message history
-     */
-    getMessageHistory(limit = 50) {
-        if (!this.connected || !this.socket || !this.roomId) {
-            return Promise.reject(new Error('Not connected to a room'));
-        }
-        
-        return new Promise((resolve) => {
-            this.socket.emit('message:getHistory', {
-                roomId: this.roomId,
-                limit
-            });
-            
-            this.socket.once('message:history', (data) => {
-                resolve(data.messages);
-            });
-        });
-    }
-    
-    /**
-     * Process pending messages after reconnection
-     */
+
     processPendingMessages() {
-        if (this.messageQueue.length > 0) {
-            this.messageQueue.forEach(item => {
-                this.sendMessage(item.message, item.type);
-            });
+        if (this.messageQueue.length > 0 && this.roomId && this.currentUser) {
+            this.messageQueue.forEach(msg => this.sendMessage(msg));
             this.messageQueue = [];
         }
     }
-    
-    /**
-     * Check connection status
-     */
-    isConnected() {
-        return this.connected && this.socket && this.socket.connected;
+
+    disconnect() {
+        if (this.socket) {
+            this.socket.disconnect();
+            this.socket      = null;
+            this.connected   = false;
+            this.currentUser = null;
+            this.roomId      = null;
+        }
     }
-    
-    /**
-     * Get current room info
-     */
-    getCurrentRoom() {
-        return this.roomId;
-    }
-    
-    /**
-     * Get socket ID
-     */
-    getSocketId() {
-        return this.userId;
-    }
+
+    isConnected()    { return this.connected && !!this.socket?.connected; }
+    getCurrentRoom() { return this.roomId; }
+    getSocketId()    { return this.socket?.id || null; }
+    getParticipants() { return Promise.resolve([]); }
 }
 
 module.exports = WebSocketManager;

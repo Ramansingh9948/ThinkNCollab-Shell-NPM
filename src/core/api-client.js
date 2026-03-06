@@ -1,175 +1,155 @@
 /**
  * ThinkNCollab API Client
- * Handles all communication with thinkncollab.com
+ * Handles HTTP requests to the backend
  */
 
-const axios = require('axios');
-const { io } = require('socket.io-client');
-const EventEmitter = require('events');
+const https = require('https');
+const http  = require('http');
+const path  = require('path');
+const fs    = require('fs-extra');
+const os    = require('os');
 
-class ThinkNCollabAPI extends EventEmitter {
-    constructor(config = {}) {
-        super();
-        
-        this.config = {
-            apiUrl: config.apiUrl || 'http://localhost:3001',
-            wsUrl: config.wsUrl || 'https://ws.thinkncollab.com',
-            ...config
-        };
-        
-        this.token = null;
-        this.user = null;
-        this.socket = null;
-        this.currentRoom = null;
+class ThinkNCollabAPI {
+
+    constructor(options = {}) {
+        this.apiUrl   = (options.apiUrl || 'https://thinkncollab.com').replace(/\/$/, '');
+        this.wsUrl    = (options.wsUrl  || 'https://thinkncollab.com').replace(/\/$/, '');
+        this.session  = null;
+        this.sessionPath = path.join(os.homedir(), '.thinkncollab', 'session.json');
+
+        // Load existing session on startup
+        this._loadSession();
     }
-    
-// In src/core/api-client.js
-// src/core/api-client.js
-async login(email, password) {
-    try {
-        const response = await axios.post(`${this.config.apiUrl}/thinknsh/login`, {
-        }, {
-            headers: {
-                'Content-Type': 'application/json',
-                'x-email': email,
-                'x-password': password
 
+    // ─── Session management ───────────────────────────────────────────────────
+
+    _loadSession() {
+        try {
+            if (fs.existsSync(this.sessionPath)) {
+                this.session = fs.readJsonSync(this.sessionPath);
             }
-        });
-        
-        if (response.data.shellToken) {
-            this.token = response.data.shellToken;
-            this.user = {
-                email: response.data.email,
-                name: response.data.name || email.split('@')[0]
-            };
-            
-            return {
-                success: true,
-                user: this.user,
-                token: this.shellToken
-            };
-        }
-        throw new Error(response.data.error || 'Login failed');
-    } catch (error) {
-        throw new Error(error.response?.data?.error || error.message);
+        } catch {}
     }
-}
-    
-    /**
-     * Check if authenticated
-     */
+
+    _saveSession(session) {
+        try {
+            fs.ensureDirSync(path.dirname(this.sessionPath));
+            fs.writeJsonSync(this.sessionPath, session);
+            this.session = session;
+        } catch {}
+    }
+
+    _clearSession() {
+        try {
+            fs.removeSync(this.sessionPath);
+            this.session = null;
+        } catch {}
+    }
+
     isAuthenticated() {
-        return !!this.token && !!this.user;
+        return !!(this.session?.token);
     }
-    
-    /**
-     * Get current user
-     */
+
+    getToken() {
+        return this.session?.token || null;
+    }
+
     getUser() {
-        return this.user;
+        return this.session?.user || null;
     }
-    
-    /**
-     * Get current room
-     */
-    getCurrentRoom() {
-        return this.currentRoom;
-    }
-    
-    /**
-     * Connect WebSocket
-     */
-    connectWebSocket() {
-        if (!this.token) return;
-        
-        this.socket = io(this.config.wsUrl, {
-            transports: ['websocket'],
-            query: { token: this.token }
-        });
-        
-        this.socket.on('connect', () => {
-            this.emit('connected', { socketId: this.socket.id });
-        });
-        
-        this.socket.on('room:joined', (data) => {
-            this.currentRoom = data.room;
-            this.emit('roomJoined', data);
-        });
-        
-        this.socket.on('message:new', (data) => {
-            this.emit('message', data);
-        });
-        
-        // ... other event handlers
-    }
-    
-    /**
-     * Join a room
-     */
-    async joinRoom(roomId, password = null) {
+
+    // ─── HTTP helper ──────────────────────────────────────────────────────────
+
+    _request(method, endpoint, body = null, headers = {}) {
         return new Promise((resolve, reject) => {
-            this.socket.emit('room:join', { roomId, password });
-            
-            this.socket.once('room:joined', (data) => {
-                this.currentRoom = data.room;
-                resolve(data);
+            const url      = new URL(this.apiUrl + endpoint);
+            const isHttps  = url.protocol === 'https:';
+            const lib      = isHttps ? https : http;
+
+            const bodyStr  = body ? JSON.stringify(body) : null;
+
+            const options = {
+                hostname: url.hostname,
+                port:     url.port || (isHttps ? 443 : 80),
+                path:     url.pathname + url.search,
+                method,
+                headers: {
+                    'Content-Type':  'application/json',
+                    'Accept':        'application/json',
+                    ...headers,
+                    ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {})
+                }
+            };
+
+            const req = lib.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(data);
+                        if (res.statusCode >= 400) {
+                            reject(new Error(parsed.error || parsed.message || `HTTP ${res.statusCode}`));
+                        } else {
+                            resolve(parsed);
+                        }
+                    } catch {
+                        reject(new Error(`Invalid response: ${data}`));
+                    }
+                });
             });
-            
-            this.socket.once('room:error', (data) => {
-                reject(new Error(data.message));
+
+            req.on('error', (err) => {
+                if (err.code === 'ECONNREFUSED') {
+                    reject(new Error(`Cannot connect to server at ${this.apiUrl} — is it running?`));
+                } else {
+                    reject(err);
+                }
             });
+
+            if (bodyStr) req.write(bodyStr);
+            req.end();
         });
     }
-    
-    /**
-     * Leave current room
-     */
-    leaveRoom() {
-        if (this.socket && this.currentRoom) {
-            this.socket.emit('room:leave');
-            this.currentRoom = null;
-        }
-    }
-    
-    /**
-     * Send message
-     */
-    async sendMessage(message) {
-        this.socket.emit('message:send', {
-            message,
+
+    // ─── Auth API ─────────────────────────────────────────────────────────────
+
+    async login(email, password) {
+        // Your backend reads from headers
+        const result = await this._request('POST', '/thinknsh/login', null, {
+            'x-email':    email,
+            'x-password': password,
+            'x-machine-id': require('os').hostname()
+        });
+
+        // Save session
+        this._saveSession({
+            token: result.shellToken,
+            user: {
+                _id:   result._id,
+                email: result.email,
+                name:  result.name,
+            },
             timestamp: new Date().toISOString()
         });
+
+        return {
+            token: result.shellToken,
+            user: {
+                _id:   result._id,
+                email: result.email,
+                name:  result.name,
+            }
+        };
     }
-    
-    /**
-     * Get team info
-     */
-    async getTeamInfo(teamId) {
-        try {
-            const response = await axios.get(`${this.config.apiUrl}/teams/${teamId}`, {
-                headers: { Authorization: `Bearer ${this.token}` }
-            });
-            return response.data;
-        } catch (error) {
-            throw new Error(error.response?.data?.error || error.message);
-        }
-    }
-    
-    /**
-     * Logout
-     */
+
     async logout() {
-        if (this.socket) {
-            this.socket.disconnect();
-            this.socket = null;
-        }
-        
-        this.token = null;
-        this.user = null;
-        this.currentRoom = null;
-        
+        this._clearSession();
         return { success: true };
+    }
+
+    async whoami() {
+        if (!this.isAuthenticated()) throw new Error('Not logged in');
+        return this.getUser();
     }
 }
 
