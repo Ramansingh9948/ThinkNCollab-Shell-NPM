@@ -24,3 +24,5 @@ npm install -g thinkncollab-shell
 
 # Or install locally
 npm install thinkncollab-shell
+
+## How to use.

@@ -71,6 +71,7 @@ function printNotification(data) {
             break;
         }
         case 'typing':
+            beep();
             process.stdout.write(`\r${chalk.dim(`✏️  ${data.username} is typing...    `)}`);
             break;
         case 'stoppedTyping':
