@@ -408,7 +408,7 @@ class ThinkNCollabShell extends EventEmitter {
         console.log(chalk.cyan(`🔗 Joining: ${args[0]}...`));
         try {
             const result = await this.ws.joinRoom(args[0], args[1]);
-            console.log(chalk.green(`✅ Joined: ${result.roomName || args[0]}`));
+            console.log(chalk.green(`Joined: ${result.roomName || args[0]}`));
         } catch (err) { console.log(chalk.red(`❌ ${err.message}`)); }
     }
 
@@ -446,7 +446,7 @@ class ThinkNCollabShell extends EventEmitter {
         if (!msg) { console.log(chalk.red('Usage: notify <type> <message>')); return; }
         try {
             await this.ws.sendNotification({ type, title: 'Shell Notification', message: msg });
-            console.log(chalk.green('✅ Notification sent'));
+            console.log(chalk.green('Notification sent'));
         } catch (err) { console.log(chalk.red(`Failed: ${err.message}`)); }
     }
 
@@ -454,24 +454,24 @@ class ThinkNCollabShell extends EventEmitter {
         if (!args.length) { for (const [a, c] of this.aliases) console.log(`  ${chalk.green(a.padEnd(12))} → ${chalk.dim(c)}`); return; }
         if (args.length < 2) { console.log(chalk.red('Usage: alias <n> <cmd>')); return; }
         this.addAlias(args[0], args.slice(1).join(' '));
-        console.log(chalk.green(`✅ ${args[0]} → ${args.slice(1).join(' ')}`));
+        console.log(chalk.green(`${args[0]} → ${args.slice(1).join(' ')}`));
     }
 
     async unaliasCommand(args) {
         if (!args[0]) { console.log(chalk.red('Usage: unalias <n>')); return; }
-        this.aliases.delete(args[0]) ? console.log(chalk.green(`✅ Removed: ${args[0]}`)) : console.log(chalk.red(`Not found: ${args[0]}`));
+        this.aliases.delete(args[0]) ? console.log(chalk.green(`Removed: ${args[0]}`)) : console.log(chalk.red(`Not found: ${args[0]}`));
     }
 
     async setCommand(args) {
         if (!args.length) { for (const [k, v] of this.variables) console.log(`  ${chalk.green(k.padEnd(12))} = ${v}`); return; }
         if (args.length < 2) { console.log(chalk.red('Usage: set <n> <value>')); return; }
         this.variables.set(args[0], args.slice(1).join(' '));
-        console.log(chalk.green(`✅ ${args[0]} = ${args.slice(1).join(' ')}`));
+        console.log(chalk.green(`${args[0]} = ${args.slice(1).join(' ')}`));
     }
 
     async unsetCommand(args) {
         if (!args[0]) { console.log(chalk.red('Usage: unset <n>')); return; }
-        this.variables.delete(args[0]) ? console.log(chalk.green(`✅ Removed`)) : console.log(chalk.red(`Not found`));
+        this.variables.delete(args[0]) ? console.log(chalk.green(`Removed`)) : console.log(chalk.red(`Not found`));
     }
 
     getSessionPath() { return path.join(this.config.configDir, 'session.json'); }
@@ -509,7 +509,7 @@ class ThinkNCollabShell extends EventEmitter {
         } catch {}
         console.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════╗
-║     ThinkNCollab Shell v0.0.04                       ║
+║     ThinkNCollab Shell v0.0.05                       ║
 ║     Type 'help' for commands                         ║
 ╚══════════════════════════════════════════════════════╝`));
     }
