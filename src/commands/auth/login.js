@@ -1,74 +1,74 @@
-const chalk = require('chalk');
-const fs = require('fs-extra');
-const path = require('path');
+/**
+ * commands/auth/login.js
+ */
+
+const chalk    = require('chalk');
+const inquirer = require('inquirer');
 
 module.exports = {
-    name: 'login',
-    description: 'Login to ThinkNCollab',
-    aliases: ['signin'],
+    name:         'login',
+    description:  'Login to ThinkNCollab',
+    aliases:      ['signin'],
     requiresAuth: false,
 
     async execute(args, shell) {
-        let email, password;
+        // Already logged in?
+        if (shell.api.isAuthenticated()) {
+            const u = shell.api.getUser();
+            console.log(chalk.green(`✅ Already logged in as ${u.name} (${u.email})`));
+            console.log(chalk.dim('   Run "logout" first to switch accounts.'));
+            return;
+        }
+
+        // Collect credentials
+        let email    = args[0];
+        let password = args[1];
+
+        if (!email || !password) {
+            const answers = await inquirer.prompt([
+                !email    && { type: 'input',    name: 'email',    message: 'Email:',    validate: v => v.includes('@') || 'Enter a valid email' },
+                !password && { type: 'password', name: 'password', message: 'Password:', mask: '*', validate: v => v.length >= 1 || 'Password required' },
+            ].filter(Boolean));
+            email    = email    || answers.email;
+            password = password || answers.password;
+        }
+
+        console.log(chalk.blue('🔐 Logging in...'));
 
         try {
-            if (args.length === 0) {
-                const { input, password: pwdFn } = require('@inquirer/prompts');
-                email    = await input({ message: 'Email:' });
-                password = await pwdFn({ message: 'Password:', mask: '*' });
-
-            } else if (args.length >= 2) {
-                email    = args[0];
-                password = args[1];
-            } else {
-                console.log(chalk.red('❌ Usage: login <email> <password>'));
-                console.log(chalk.dim('   or:  login (interactive)'));
-                return;
-            }
-
-            if (!email || !password) {
-                console.log(chalk.red('❌ Email and password required'));
-                return;
-            }
-
-            console.log(chalk.cyan('🔐 Logging in...'));
-
-            if (!shell.api) { console.log(chalk.red('❌ API not initialized')); return; }
-
             const result = await shell.api.login(email, password);
 
-            await fs.writeJson(path.join(shell.config.configDir, 'session.json'), {
-                user:      result.user,
-                token:     result.token,
-                timestamp: new Date().toISOString()
-            });
+            // result.user is already normalised by api-client.getUser()
+            // shape: { _id, userId, email, name, userType }
+            const user = result.user;
 
-            console.log(chalk.green(`✅ Welcome, ${result.user.name || result.user.email}!`));
+            // ★ Tell the WebSocket manager who the user is + pass the token
+            // This must happen BEFORE any join attempt
+            shell.ws.setUser(user, result.token);
 
-            // Auto-connect to WebSocket + join personal notification room
-            try {
-                const token  = result.token;
-                const userId = result.user._id ;
-                const name   = result.user.name || result.user.email;
-
-                // Set user in websocket manager
-                shell.ws._token = token;
-                shell.ws.setUser({ userId, name, userType: 'User' }, token);
-
-                // Connect to backend
-                await shell.ws.connect(token);
-
-                // Join personal notification room (for task assignments etc.)
-                shell.ws.joinUserRoom(userId);
-
-                console.log(chalk.green('🔌 Connected to ThinkNCollab server'));
-            } catch (wsErr) {
-                console.log(chalk.yellow(`⚠️  Could not connect to server: ${wsErr.message}`));
+            // Connect WebSocket if not already connected
+            if (!shell.ws.isConnected()) {
+                try {
+                    await shell.ws.connect(result.token);
+                    console.log(chalk.dim('   🔌 Connected to ThinkNCollab server'));
+                } catch (wsErr) {
+                    // Non-fatal — user can still use REST commands
+                    console.log(chalk.yellow(`   ⚠️  WebSocket unavailable: ${wsErr.message}`));
+                }
+            } else {
+                // Already connected — re-announce with new user identity
+                shell.ws._announceUser?.();
             }
 
+            console.log(chalk.green(`✅ Welcome, ${user.name}!`));
+            console.log(chalk.dim(`   Logged in as ${user.email}`));
+
         } catch (err) {
-            if (err.name === 'ExitPromptError' || err.message?.includes('force closed')) {
-                console.log(chalk.yellow('⚠️  Cancelled'));
+            if (err.message.includes('401') || err.message.toLowerCase().includes('invalid') ||
+                err.message.toLowerCase().includes('unauthorized')) {
+                console.log(chalk.red('❌ Invalid email or password'));
+            } else if (err.message.includes('connect') || err.message.includes('ECONNREFUSED')) {
+                console.log(chalk.red(`❌ Cannot reach server — is it running?`));
             } else {
                 console.log(chalk.red(`❌ Login failed: ${err.message}`));
             }

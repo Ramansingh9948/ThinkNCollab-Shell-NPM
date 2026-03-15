@@ -38,3 +38,5 @@ demo/
 docs/
 *.md
 !README.md
+
+tncproject

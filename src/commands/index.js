@@ -1,54 +1,65 @@
 /**
- * Command Registry - Loads and manages all commands
+ * src/commands/index.js — Command Registry
  */
-
 const chalk = require('chalk');
 
 class CommandRegistry {
     constructor(shell) {
-        this.shell = shell;
-        this.commands = new Map();
-        this.aliases = new Map();
+        this.shell      = shell;
+        this.commands   = new Map();
+        this.aliases    = new Map();
         this.categories = new Map();
-
         this.loadCommands();
     }
 
     loadCommands() {
-        try {
-            this.register(require('./auth/login'),        'auth');
-            this.register(require('./auth/logout'),       'auth');
-            this.register(require('./auth/whoami'),       'auth');
-            this.register(require('./team/myteam'),       'team');
-            this.register(require('./team/teammates'),    'team');
-            this.register(require('./team/invite'),       'team');
-            this.register(require('./room/join'),         'room');
-            this.register(require('./room/leave'),        'room');
-            this.register(require('./room/rooms'),        'room');
-            this.register(require('./message/say'),       'message');
-            this.register(require('./shell/status'),      'shell');
-        } catch (error) {
-            console.error(chalk.red(`❌ Failed to load command: ${error.message}`));
-            console.error(error.stack);
-        }
+        const load = (path, category) => {
+            try { this.register(require(path), category); }
+            catch (e) { console.error(chalk.red(`❌ Failed to load ${path}: ${e.message}`)); }
+        };
+
+        // Auth
+        load('./auth/login',    'auth');
+        load('./auth/logout',   'auth');
+        load('./auth/whoami',   'auth');
+        load('./auth/register', 'auth');
+
+        // Team
+        load('./team/myteam',    'team');
+        load('./team/teammates', 'team');
+        load('./team/invite',    'team');
+
+        // Room
+        load('./room/join',   'room');
+        load('./room/leave',  'room');
+        load('./room/rooms',  'room');
+
+        // Message
+        load('./message/say', 'message');
+
+        // Shell
+        load('./shell/status', 'shell');
+
+        // Tasks
+        load('./tasks/tasks',       'tasks');
+        load('./tasks/task',        'tasks');
+        // load('./tasks/start',       'tasks');
+        load('./tasks/complete',    'tasks');
+        // load('./tasks/comment',     'tasks');
+        load('./tasks/create-task', 'tasks');
+
+        // Terminal
+        load('./terminal/share', 'terminal');
     }
 
     register(command, category) {
         this.commands.set(command.name, command);
-
-        if (!this.categories.has(category)) {
-            this.categories.set(category, []);
-        }
+        if (!this.categories.has(category)) this.categories.set(category, []);
         this.categories.get(category).push(command.name);
-
-        if (command.aliases) {
-            command.aliases.forEach(alias => this.aliases.set(alias, command.name));
-        }
+        if (command.aliases) command.aliases.forEach(a => this.aliases.set(a, command.name));
     }
 
-    addAlias(alias, command) {
-        this.aliases.set(alias, command);
-    }
+    addAlias(alias, command) { this.aliases.set(alias, command); }
 
     getCommand(name) {
         if (this.aliases.has(name)) name = this.aliases.get(name);
@@ -65,17 +76,14 @@ class CommandRegistry {
 
         try {
             if (command.requiresAuth && !shell.api?.isAuthenticated()) {
-                console.log(chalk.red('❌ Please login first: login <email> <password>'));
+                console.log(chalk.red('❌ Please login first: login'));
                 return true;
             }
-
-            if (command.requiresRoom && !shell.api?.getCurrentRoom()) {
+            if (command.requiresRoom && !shell.ws?.getCurrentRoom()) {
                 console.log(chalk.red('❌ Please join a room first: join <room-id>'));
                 return true;
             }
-
             await command.execute(cmdArgs, shell);
-
         } catch (error) {
             console.log(chalk.red(`❌ Command error: ${error.message}`));
         }
@@ -86,17 +94,15 @@ class CommandRegistry {
     getHelpText() {
         let help = chalk.cyan('\n📚 Available Commands:\n');
         help += chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n');
-
         for (const [category, commands] of this.categories) {
             help += chalk.yellow(`${category.toUpperCase()}:\n`);
             commands.forEach(cmdName => {
                 const cmd     = this.commands.get(cmdName);
                 const aliases = cmd.aliases ? chalk.dim(` (${cmd.aliases.join(', ')})`) : '';
-                help += `  ${chalk.green(cmdName.padEnd(12))}${aliases} - ${cmd.description}\n`;
+                help += `  ${chalk.green(cmdName.padEnd(14))}${aliases} - ${cmd.description}\n`;
             });
             help += '\n';
         }
-
         return help;
     }
 }

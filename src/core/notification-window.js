@@ -93,7 +93,7 @@ function connect() {
     let buffer   = '';
 
     client.connect(PORT, HOST, () => {
-        console.log(chalk.green('  ✅ Connected to shell!\n'));
+        console.log(chalk.green('   Connected to shell!\n'));
     });
 
     client.on('data', (chunk) => {
