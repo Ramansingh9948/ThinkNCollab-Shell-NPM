@@ -18,7 +18,7 @@ const fs   = require('fs-extra');
 const path = require('path');
 const os   = require('os');
 
-const CONFIG_FILE  = '.tncproject';
+const CONFIG_FILE  = 'tncproject';
 const MAGIC        = Buffer.from('TNCP');
 const ROOM_ID_SIZE = 24;
 const MIN_SIZE     = 4 + 1 + ROOM_ID_SIZE + 12 + 16 + 2;  // 59 bytes minimum

@@ -233,11 +233,11 @@ class ThinkNCollabShell extends EventEmitter {
         try {
             cfg = loadProjectConfig();
         } catch (err) {
-            console.log(chalk.yellow(`⚠️  .tncproject: ${err.message}\n`));
+            console.log(chalk.yellow(`⚠️  tncproject: ${err.message}\n`));
             return false;
         }
 
-        console.log(chalk.dim(`  📄 .tncproject found`));
+        console.log(chalk.dim(`  📄 tncproject found`));
         console.log(chalk.dim(`     Room : ${cfg.roomId}`));
         console.log(chalk.dim(`     File : ${cfg.filePath}\n`));
 
@@ -249,7 +249,7 @@ class ThinkNCollabShell extends EventEmitter {
                 roomId:     cfg.roomId,
             });
         } catch (err) {
-            console.log(chalk.red(`❌ .tncproject auth failed: ${err.message}`));
+            console.log(chalk.red(`❌ tncproject auth failed: ${err.message}`));
             console.log(chalk.dim('   Falling back to manual login.\n'));
             return false;
         }
@@ -291,32 +291,40 @@ class ThinkNCollabShell extends EventEmitter {
     }
 
     // ─── Execute ──────────────────────────────────────────────────────────────
+// shell.js — execute() mein ye change karo
+async execute(input) {
+    if (!input.trim()) return;
 
-    async execute(input) {
-        if (!input.trim()) return;
+    const args    = this.parseCommand(input);
+    const cmdName = args[0].toLowerCase();
+    const cmdArgs = args.slice(1);
 
-        const args    = this.parseCommand(input);
-        const cmdName = args[0].toLowerCase();
-        const cmdArgs = args.slice(1);
+    if (this.commands.has(cmdName)) {
+        try { await this.commands.get(cmdName).handler(cmdArgs, this); }
+        catch (err) { console.log(chalk.red(`Error: ${err.message}`)); }
+        process.stdout.write('\r\n');
+        return;
+    }
 
-        if (this.commands.has(cmdName)) {
-            try { await this.commands.get(cmdName).handler(cmdArgs, this); }
-            catch (err) { console.log(chalk.red(`Error: ${err.message}`)); }
+    if (this.commandRegistry) {
+        const handled = await this.commandRegistry.execute(input, this);
+        if (handled) {
             process.stdout.write('\r\n');
             return;
         }
-
-        if (this.commandRegistry) {
-            const handled = await this.commandRegistry.execute(input, this);
-            if (handled) {
-                process.stdout.write('\r\n');
-                return;
-            }
-        }
-
-        await this.executeSystemCommand(input);
     }
 
+    // ★ Windows pe known-useless OS commands block karo
+    const blockedOnWindows = [ 'open', 'which', 'grep', 'touch', 'cat'];
+    if (process.platform === 'win32' && blockedOnWindows.includes(cmdName)) {
+        console.log(chalk.red(`'${cmdName}' is not a thinknsh command.`));
+        console.log(chalk.dim(`  Type 'help' to see available commands.`));
+        process.stdout.write('\r\n');
+        return;
+    }
+
+    await this.executeSystemCommand(input);
+}
     // ─── Prompt ───────────────────────────────────────────────────────────────
 
     getPromptText() {

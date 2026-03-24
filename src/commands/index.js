@@ -13,10 +13,17 @@ class CommandRegistry {
     }
 
     loadCommands() {
-        const load = (path, category) => {
-            try { this.register(require(path), category); }
-            catch (e) { console.error(chalk.red(`❌ Failed to load ${path}: ${e.message}`)); }
-        };
+const load = (path, category) => {
+    try {
+        const cmd = require(path);
+        if (!cmd || !cmd.name) {
+            console.error(chalk.red(`❌ BAD COMMAND (no name): ${path}`));
+            return;
+        }
+        this.register(cmd, category);
+    }
+    catch (e) { console.error(chalk.red(`❌ Failed to load ${path}: ${e.message}`)); }
+};
 
         // Auth
         load('./auth/login',    'auth');
@@ -39,20 +46,32 @@ class CommandRegistry {
 
         // Shell
         load('./shell/status', 'shell');
+        load('./shell/notify', 'shell');
 
         // Tasks
         load('./tasks/tasks',       'tasks');
         load('./tasks/task',        'tasks');
+        load('./tasks/task-status', 'tasks'); 
         // load('./tasks/start',       'tasks');
         load('./tasks/complete',    'tasks');
         // load('./tasks/comment',     'tasks');
         load('./tasks/create-task', 'tasks');
+        
 
         // Terminal
         load('./terminal/share', 'terminal');
+
+
+
+
+
     }
 
     register(command, category) {
+         if (!command || !command.name) {
+        console.error(chalk.yellow(`⚠️  Skipping invalid command in category: ${category}`));
+        return;
+    }
         this.commands.set(command.name, command);
         if (!this.categories.has(category)) this.categories.set(category, []);
         this.categories.get(category).push(command.name);
@@ -97,10 +116,11 @@ class CommandRegistry {
         for (const [category, commands] of this.categories) {
             help += chalk.yellow(`${category.toUpperCase()}:\n`);
             commands.forEach(cmdName => {
-                const cmd     = this.commands.get(cmdName);
-                const aliases = cmd.aliases ? chalk.dim(` (${cmd.aliases.join(', ')})`) : '';
-                help += `  ${chalk.green(cmdName.padEnd(14))}${aliases} - ${cmd.description}\n`;
-            });
+    const cmd = this.commands.get(cmdName);
+    if (!cmd || !cmdName) return;  // ← ye line add karo
+    const aliases = cmd.aliases ? chalk.dim(` (${cmd.aliases.join(', ')})`) : '';
+    help += `  ${chalk.green(cmdName.padEnd(14))}${aliases} - ${cmd.description || ''}\n`;
+});
             help += '\n';
         }
         return help;

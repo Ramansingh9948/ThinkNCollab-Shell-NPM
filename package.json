@@ -1,6 +1,6 @@
 {
   "name": "thinkncollab-shell",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "ThinkNCollab Custom Shell with WebSocket collaboration",
   "main": "src/core/shell.js",
   "bin": {

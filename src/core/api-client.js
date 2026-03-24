@@ -115,37 +115,73 @@ class ThinkNCollabAPI {
 
     // ─── Auth ─────────────────────────────────────────────────────────────────
 
-    async login(email, password) {
-        const result = await this._request('POST', '/thinknsh/login', null, {
-            'x-email':      email,
-            'x-password':   password,
-            'x-machine-id': os.hostname()
-        });
+async login(email, password) {
+    const result = await this._request('POST', '/thinknsh/login', null, {
+        'x-email':      email,
+        'x-password':   password,
+        'x-machine-id': os.hostname()
+    });
 
-        // Normalise: store with BOTH _id and userId so getUser() always works
-        this._saveSession({
-            token: result.shellToken,
-            user: {
-                _id:      result._id,
-                userId:   result._id,   // explicit — ws needs this
-                email:    result.email,
-                name:     result.name,
-                userType: result.userType || result.model || 'User',
-            },
-            timestamp: new Date().toISOString()
-        });
+    this._saveSession({
+        token:          result.shellToken,
+        shellSessionId: result.shellSessionId,  // ✅ add karo
+        user: {
+            _id:      result._id,
+            userId:   result._id,
+            email:    result.email,
+            name:     result.name,
+            userType: result.userType || result.model || 'User',
+        },
+        timestamp: new Date().toISOString()
+    });
 
-        return {
-            token: result.shellToken,
-            user:  this.getUser()       // return normalised shape
-        };
+    return {
+        token: result.shellToken,
+        user:  this.getUser()
+    };
+}
+
+// ─── Session event logger ─────────────────────────────────────────────────
+
+async logEvent(type, roomId = null, meta = {}) {
+    const sessionId = this.session?.shellSessionId;
+    if (!sessionId) return;
+    await this._request('POST', '/thinknsh/session/event', {
+        sessionId, type, roomId, meta
+    }).catch(() => {}); // silently fail — never block shell
+}
+
+// ─── Heartbeat — keeps lastSeenAt fresh while shell is open ──────────────
+
+startHeartbeat(intervalMs = 60000) {
+    if (this._heartbeatTimer) return; // already running
+    this._heartbeatTimer = setInterval(() => {
+        const sessionId = this.session?.shellSessionId;
+        if (!sessionId) return;
+        this._request('POST', '/thinknsh/session/event', {
+            sessionId,
+            type: 'heartbeat',
+            meta: { ts: new Date().toISOString() }
+        }).catch(() => {});
+    }, intervalMs);
+}
+
+stopHeartbeat() {
+    if (this._heartbeatTimer) {
+        clearInterval(this._heartbeatTimer);
+        this._heartbeatTimer = null;
     }
+}
 
-    async logout() {
-        this._clearSession();
-        return { success: true };
+async logout() {
+    const sessionId = this.session?.shellSessionId;
+    if (sessionId) {
+        await this._request('POST', '/thinknsh/session/end', { sessionId }).catch(() => {});
     }
-
+    this.stopHeartbeat();
+    this._clearSession();
+    return { success: true };
+}
     async whoami() {
         if (!this.isAuthenticated()) throw new Error('Not logged in');
         return this.getUser();
