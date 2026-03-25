@@ -138,49 +138,67 @@ class ThinkNCollabShell extends EventEmitter {
 
     // ─── WebSocket → Shell + TCP bridge ──────────────────────────────────────
 
-    setupWebSocketHandlers() {
-        this.ws.on('connected',    (d) => this.pushNotification({ type: 'connected',    socketId: d.socketId }));
-        this.ws.on('disconnected', (d) => this.pushNotification({ type: 'disconnected', reason: d.reason }));
-        this.ws.on('reconnected',  ()  => this.pushNotification({ type: 'connected',    socketId: 'reconnected' }));
+setupWebSocketHandlers() {
+    this.ws.on('connected', (d) => {
+        this.api.logEvent('connected', null, { socketId: d?.socketId });
+        this.api.startHeartbeat();
+        this.pushNotification({ type: 'connected', socketId: d?.socketId });
+    });
 
-        this.ws.on('message', (d) => {
-            const myId = this.api.getUser()?._id;
-            if (myId && d.userId === myId) return;
-            this.pushNotification({ type: 'message', from: d.username, text: d.message });
+    this.ws.on('disconnected', (d) => {
+        this.api.logEvent('disconnected', null, { reason: d?.reason });
+        this.api.stopHeartbeat();
+        this.pushNotification({ type: 'disconnected', reason: d?.reason });
+    });
+
+    this.ws.on('reconnected', () => {
+        this.api.logEvent('reconnected');
+        this.api.startHeartbeat();
+        this.pushNotification({ type: 'connected', socketId: 'reconnected' });
+    });
+
+    this.ws.on('message', (d) => {
+        const myId = this.api.getUser()?._id;
+        if (myId && d.userId === myId) return;
+        this.pushNotification({ type: 'message', from: d.username, text: d.message });
+    });
+
+    this.ws.on('messageHistory', (messages) => {
+        if (!messages?.length) return;
+        console.log(chalk.dim('\n  ─── Room History ───────────────────────────────'));
+        messages.forEach(msg => {
+            const from    = msg.name || msg.username || msg.sender?.name || 'Unknown';
+            const text    = msg.message || msg.content || msg.text || '';
+            const ts      = msg.timestamp || msg.createdAt;
+            const timeStr = ts ? chalk.dim(`[${new Date(ts).toLocaleTimeString()}]`) : '';
+            console.log(`  ${timeStr} ${chalk.cyan(from + ':')} ${chalk.white(text)}`);
         });
+        console.log(chalk.dim('  ────────────────────────────────────────────────\n'));
+    });
 
-        this.ws.on('messageHistory', (messages) => {
-            if (!messages?.length) return;
-            console.log(chalk.dim('\n  ─── Room History ───────────────────────────────'));
-            messages.forEach(msg => {
-                const from    = msg.name || msg.username || msg.sender?.name || 'Unknown';
-                const text    = msg.message || msg.content || msg.text || '';
-                const ts      = msg.timestamp || msg.createdAt;
-                const timeStr = ts ? chalk.dim(`[${new Date(ts).toLocaleTimeString()}]`) : '';
-                console.log(`  ${timeStr} ${chalk.cyan(from + ':')} ${chalk.white(text)}`);
-            });
-            console.log(chalk.dim('  ────────────────────────────────────────────────\n'));
+    this.ws.on('userJoined', (d) => this.pushNotification({ type: 'userJoined', username: d.username }));
+    this.ws.on('userLeft',   (d) => this.pushNotification({ type: 'userLeft',   username: d.username }));
+
+    // room join/leave events
+    this.ws.on('joined', (roomId) => this.api.logEvent('room_join',  roomId));
+    this.ws.on('left',   (roomId) => this.api.logEvent('room_leave', roomId));
+
+    this.ws.on('notification', (d) => {
+        this.pushNotification({
+            type:       'notification',
+            level:      d.type,
+            title:      d.title,
+            message:    d.message,
+            taskTitle:  d.taskTitle,
+            assignedBy: d.assignedBy,
         });
+    });
 
-        this.ws.on('userJoined',   (d) => this.pushNotification({ type: 'userJoined',   username: d.username }));
-        this.ws.on('userLeft',     (d) => this.pushNotification({ type: 'userLeft',     username: d.username }));
-
-        this.ws.on('notification', (d) => {
-            this.pushNotification({
-                type:       'notification',
-                level:      d.type,
-                title:      d.title,
-                message:    d.message,
-                taskTitle:  d.taskTitle,
-                assignedBy: d.assignedBy,
-            });
-        });
-
-        this.ws.on('error', (e) => {
-            console.log(chalk.red(`⚠️  WebSocket error: ${e.message}`));
-            this.pushNotification({ type: 'notification', level: 'error', title: 'WebSocket Error', message: e.message });
-        });
-    }
+    this.ws.on('error', (e) => {
+        console.log(chalk.red(`⚠️  WebSocket error: ${e.message}`));
+        this.pushNotification({ type: 'notification', level: 'error', title: 'WebSocket Error', message: e.message });
+    });
+}
 
     // ─── Start ────────────────────────────────────────────────────────────────
 
@@ -537,11 +555,12 @@ async execute(input) {
         try { fs.writeFileSync(this.config.historyFile, this.history.slice(-this.config.maxHistory).join('\n')); } catch {}
     }
 
-    cleanup() {
-        if (this.tcpServer) { try { this.tcpServer.close(); } catch {} }
-        if (this.ws) this.ws.disconnect();
-        this.saveHistory();
-    }
+cleanup() {
+    this.api.logout();  // session end + heartbeat stop + lastSeen update
+    if (this.tcpServer) { try { this.tcpServer.close(); } catch {} }
+    if (this.ws) this.ws.disconnect();
+    this.saveHistory();
+}
 }
 
 module.exports = ThinkNCollabShell;
