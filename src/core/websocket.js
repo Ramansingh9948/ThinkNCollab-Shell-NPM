@@ -10,7 +10,7 @@ class WebSocketManager extends EventEmitter {
     constructor(config = {}) {
         super();
         this.config = {
-            serverUrl:         config.serverUrl         || 'http://localhost:3001',
+            serverUrl:         config.serverUrl         || 'https://thinkncollab.com',
             reconnectAttempts: config.reconnectAttempts || 5,
             reconnectDelay:    config.reconnectDelay    || 1000,
             ...config

@@ -35,7 +35,7 @@ class ThinkNCollabShell extends EventEmitter {
             configDir:   path.join(os.homedir(), '.thinkncollab'),
             maxHistory:  1000,
             websocket: {
-                serverUrl:   options.serverUrl   || 'http://localhost:3001',
+                serverUrl:   options.serverUrl   || 'https://thinkncollab.com',
                 autoConnect: options.autoConnect || false
             },
             ...options
@@ -54,8 +54,8 @@ class ThinkNCollabShell extends EventEmitter {
         this.tcpServer     = null;
 
         this.api = new ThinkNCollabAPI({
-            apiUrl: options.apiUrl || 'http://localhost:3001',
-            wsUrl:  options.wsUrl  || 'http://localhost:3001'
+            apiUrl: options.apiUrl || 'https://thinkncollab.com',
+            wsUrl:  options.wsUrl  || 'https://thinkncollab.com'
         });
 
         this.commands  = new Map();
@@ -523,7 +523,7 @@ async execute(input) {
                 stdio: 'inherit'
             });
             child.on('close', (code) => {
-                // Update currentDir in case command changed it (cd won't but others might)
+                // Update currentDir in case command changed it (cd won't but others might)  https://thinkncollab.com
                 try { this.currentDir = process.cwd(); } catch {}
                 process.stdout.write('\r\n');
                 resolve();
@@ -539,7 +539,7 @@ async execute(input) {
         try { const figlet = require('figlet'); console.log(chalk.cyan(figlet.textSync('ThinkNCollab', { font: 'Standard' }))); } catch {}
         console.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════╗
-║     ThinkNCollab Shell v0.0.5                        ║
+║     ThinkNCollab Shell v0.0.8                        ║
 ║     Type 'help' for commands                         ║
 ╚══════════════════════════════════════════════════════╝`));
     }

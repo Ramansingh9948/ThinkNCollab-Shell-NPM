@@ -40,7 +40,7 @@ function findConfigFile(startDir = process.cwd()) {
  * Read and lightly validate a .tncproject file.
  * Returns { filePath, roomId, fileBase64 } — no decryption.
  *
- * @throws if file is missing, wrong format, or roomId looks wrong
+ * @throws if file is missing, wrong format, or roomId looks wrong  http://localhost:3001
  */
 function loadProjectConfig(startDir = process.cwd()) {
     const filePath = findConfigFile(startDir);

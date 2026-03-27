@@ -11,8 +11,8 @@ const os    = require('os');
 class ThinkNCollabAPI {
 
     constructor(options = {}) {
-        this.apiUrl      = (options.apiUrl || 'http://localhost:3001').replace(/\/$/, '');
-        this.wsUrl       = (options.wsUrl  || 'http://localhost:3001').replace(/\/$/, '');
+        this.apiUrl      = (options.apiUrl || 'https://thinkncollab.com').replace(/\/$/, '');
+        this.wsUrl       = (options.wsUrl  || 'https://thinkncollab.com').replace(/\/$/, '');
         this.session     = null;
         this.sessionPath = path.join(os.homedir(), '.thinkncollab', 'session.json');
         this._loadSession();
