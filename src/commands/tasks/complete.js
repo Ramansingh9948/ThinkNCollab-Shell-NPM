@@ -1,5 +1,5 @@
-/**
- * src/commands/tasks/complete.js — Mark your task assignment as completed
+/*
+  src/commands/tasks/complete.js — Mark your task assignment as completed
  */
 const chalk = require('chalk');
 

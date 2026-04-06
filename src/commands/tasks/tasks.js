@@ -1,5 +1,5 @@
-/**
- * src/commands/tasks/tasks.js — List my tasks + suggestions in current room
+/*
+  src/commands/tasks/tasks.js — List my tasks + suggestions in current room
  */
 const chalk = require('chalk');
 

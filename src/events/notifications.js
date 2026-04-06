@@ -1,5 +1,5 @@
-/**
- * Notification System for ThinkNCollab Shell
+/*
+  Notification System for ThinkNCollab Shell
  */
 
 const EventEmitter = require('events');
@@ -20,8 +20,7 @@ class NotificationManager extends EventEmitter {
         this.unreadCount = 0;
     }
     
-    /**
-     * Show a notification
+    /* Show a notification
      */
     show(notification) {
         const notif = {
@@ -61,8 +60,7 @@ class NotificationManager extends EventEmitter {
         return notif;
     }
     
-    /**
-     * Show notification in console
+    /* Show notification in console
      */
     showInConsole(notification) {
         let color = chalk.blue;
@@ -91,8 +89,7 @@ class NotificationManager extends EventEmitter {
         console.log(color(`${symbol} ${notification.title}: ${notification.message}`));
     }
     
-    /**
-     * Show desktop notification (if supported)
+    /* Show desktop notification (if supported)
      */
     showDesktopNotification(notification) {
         // Check if running in Electron
@@ -110,16 +107,14 @@ class NotificationManager extends EventEmitter {
         }
     }
     
-    /**
-     * Play notification sound
+    /* Play notification sound
      */
     playSound() {
         // TODO: Implement sound playing
         // This would use 'sound-play' or similar package
     }
     
-    /**
-     * Mark notification as read
+    /* Mark notification as read
      */
     markAsRead(id) {
         const notif = this.notifications.find(n => n.id === id);
@@ -130,8 +125,7 @@ class NotificationManager extends EventEmitter {
         }
     }
     
-    /**
-     * Mark all as read
+    /* Mark all as read
      */
     markAllAsRead() {
         this.notifications.forEach(n => {
@@ -143,22 +137,19 @@ class NotificationManager extends EventEmitter {
         this.emit('allRead');
     }
     
-    /**
-     * Get unread notifications
+    /* Get unread notifications
      */
     getUnread() {
         return this.notifications.filter(n => !n.read);
     }
     
-    /**
-     * Get all notifications
+    /* Get all notifications
      */
     getAll() {
         return this.notifications;
     }
     
-    /**
-     * Clear all notifications
+    /* Clear all notifications
      */
     clear() {
         this.notifications = [];
@@ -166,29 +157,25 @@ class NotificationManager extends EventEmitter {
         this.emit('cleared');
     }
     
-    /**
-     * Create success notification
+    /* Create success notification
      */
     success(title, message, data = {}) {
         return this.show({ type: 'success', title, message, data });
     }
     
-    /**
-     * Create error notification
+    /* Create error notification
      */
     error(title, message, data = {}) {
         return this.show({ type: 'error', title, message, data });
     }
     
-    /**
-     * Create warning notification
+    /* Create warning notification
      */
     warning(title, message, data = {}) {
         return this.show({ type: 'warning', title, message, data });
     }
     
-    /**
-     * Create info notification
+    /* Create info notification
      */
     info(title, message, data = {}) {
         return this.show({ type: 'info', title, message, data });

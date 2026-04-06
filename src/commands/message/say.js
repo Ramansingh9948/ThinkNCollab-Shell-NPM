@@ -1,7 +1,7 @@
-/**
- * Say Command
- * 
- * Usage: say <message>
+/*
+  Say Command
+  
+  Usage: say <message>
  */
 
 const chalk = require('chalk');

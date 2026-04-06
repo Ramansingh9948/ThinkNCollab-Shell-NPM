@@ -1,8 +1,8 @@
-/**
- * MyTeam Command
- * 
- * Usage: myteam
- *        myteam [team-id]
+/*
+  MyTeam Command
+  
+  Usage: myteam
+         myteam [team-id]
  */
 
 const chalk = require('chalk');

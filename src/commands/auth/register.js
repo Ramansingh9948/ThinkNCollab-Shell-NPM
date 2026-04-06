@@ -1,6 +1,6 @@
-/**
- * src/commands/auth/register.js
- * Register new account — opens browser with pre-auth session
+/*
+  src/commands/auth/register.js
+  Register new account — opens browser with pre-auth session
  */
 
 const chalk = require('chalk');

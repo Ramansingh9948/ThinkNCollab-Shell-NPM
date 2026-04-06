@@ -1,5 +1,5 @@
-/**
- * src/core/websocket.js — WebSocket Manager for ThinkNCollab Shell
+/*
+  src/core/websocket.js — WebSocket Manager for ThinkNCollab Shell
  */
 
 const { io }   = require('socket.io-client');

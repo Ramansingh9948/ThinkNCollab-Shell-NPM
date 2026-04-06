@@ -1,8 +1,8 @@
-/**
- * Teammates Command
- * 
- * Usage: teammates
- *        teammates [name]
+/*
+Teammates Command
+
+Usage: teammates
+       teammates [name]
  */
 
 const chalk = require('chalk');

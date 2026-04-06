@@ -1,7 +1,7 @@
-/**
- * Leave Command
- * 
- * Usage: leave
+/*
+  Leave Command
+  
+  Usage: leave
  */
 
 const chalk = require('chalk');

@@ -1,5 +1,5 @@
-/**
- * src/commands/tasks/create-task.js — Create a new task interactively
+/*
+  src/commands/tasks/create-task.js — Create a new task interactively
  */
 const chalk = require('chalk');
 

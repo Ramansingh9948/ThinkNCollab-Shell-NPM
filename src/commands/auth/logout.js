@@ -1,7 +1,7 @@
-/**
- * Logout Command
- * 
- * Usage: logout
+/*
+  Logout Command
+  
+  Usage: logout
  */
 
 const chalk = require('chalk');

@@ -1,13 +1,13 @@
-/**
- * commands/terminal/share.js
- *
- * Usage:
- *   share start       — start sharing current terminal
- *   share stop        — stop sharing
- *   share status      — show who's viewing / requesting
- *   share grant <uid> — grant write to a viewer
- *   share revoke <uid>— revoke write
- *   share kick <uid>  — kick a viewer
+/*
+  commands/terminal/share.js
+ 
+  Usage:
+    share start       — start sharing current terminal
+    share stop        — stop sharing
+    share status      — show who's viewing / requesting
+    share grant <uid> — grant write to a viewer
+    share revoke <uid>— revoke write
+    share kick <uid>  — kick a viewer
  */
 
 const chalk = require('chalk');

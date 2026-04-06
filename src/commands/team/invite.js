@@ -1,8 +1,8 @@
-/**
- * Invite Command
- * 
- * Usage: invite <email>
- *        invite <email> --role <role>
+/*
+  Invite Command
+  
+  Usage: invite <email>
+         invite <email> --role <role>
  */
 
 const chalk = require('chalk');

@@ -1,5 +1,5 @@
-/**
- * src/commands/shell/notify.js — Send notifications to room
+/*
+  src/commands/shell/notify.js — Send notifications to room
  */
 const chalk = require('chalk');
 

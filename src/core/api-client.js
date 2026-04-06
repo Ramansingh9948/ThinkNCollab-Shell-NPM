@@ -43,12 +43,12 @@ class ThinkNCollabAPI {
     isAuthenticated() { return !!(this.session?.token); }
     getToken()        { return this.session?.token || null; }
 
-    /**
-     * Returns user in a CONSISTENT shape used everywhere:
-     *   { _id, userId, email, name, userType }
-     *
-     * Both _id and userId are the same string so callers can use either.
-     */
+    /*
+      Returns user in a CONSISTENT shape used everywhere:
+        { _id, userId, email, name, userType }
+     
+      Both _id and userId are the same string so callers can use either.
+    */
     getUser() {
         const u = this.session?.user;
         if (!u) return null;
@@ -124,7 +124,7 @@ async login(email, password) {
 
     this._saveSession({
         token:          result.shellToken,
-        shellSessionId: result.shellSessionId,  // ✅ add karo
+        shellSessionId: result.shellSessionId,  
         user: {
             _id:      result._id,
             userId:   result._id,

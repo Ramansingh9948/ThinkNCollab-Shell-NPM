@@ -1,12 +1,12 @@
 /**
- * Join Command
- *
- * Usage: join <room-id> [password]
- *
- * Flow:
- *   1. REST call  → shell.api.joinRoom()  — validates membership + fetches room info
- *   2. WebSocket  → thinknsh:join         — registers socket in the room on the server
- *   3. Wait for   → thinknsh:joined       — server confirms + sends message history
+  Join Command
+ 
+  Usage: join <room-id> [password]
+ 
+ Flow:
+   1. REST call  → shell.api.joinRoom()  — validates membership + fetches room info
+   2. WebSocket  → thinknsh:join         — registers socket in the room on the server
+   3. Wait for   → thinknsh:joined       — server confirms + sends message history
  */
 
 const chalk = require('chalk');

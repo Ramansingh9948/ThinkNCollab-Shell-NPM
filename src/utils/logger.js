@@ -1,5 +1,4 @@
-/**
- * Logger for ThinkNCollab Shell
+/* Logger for ThinkNCollab Shell
  */
 
 const fs = require('fs-extra');
@@ -29,16 +28,14 @@ class Logger {
         this.currentLogFile = this.getLogFileName();
     }
     
-    /**
-     * Get log file name
+    /* Get log file name
      */
     getLogFileName() {
         const date = new Date().toISOString().split('T')[0];
         return path.join(this.options.logDir, `thinknsh-${date}.log`);
     }
     
-    /**
-     * Write to log file
+    /* Write to log file
      */
     async write(level, message, data = null) {
         if (this.levels[level] < this.levels[this.options.level]) {
@@ -63,8 +60,7 @@ class Logger {
         }
     }
     
-    /**
-     * Rotate log files if needed
+    /* Rotate log files if needed
      */
     async rotateIfNeeded() {
         try {
@@ -87,8 +83,7 @@ class Logger {
         }
     }
     
-    /**
-     * Clean old log files
+    /* Clean old log files
      */
     async cleanOldLogs() {
         try {
@@ -114,36 +109,31 @@ class Logger {
         }
     }
     
-    /**
-     * Debug log
+    /* Debug log
      */
     debug(message, data = null) {
         return this.write('debug', message, data);
     }
     
-    /**
-     * Info log
+    /* Info log
      */
     info(message, data = null) {
         return this.write('info', message, data);
     }
     
-    /**
-     * Warn log
+    /* Warn log
      */
     warn(message, data = null) {
         return this.write('warn', message, data);
     }
     
-    /**
-     * Error log
+    /* Error log
      */
     error(message, data = null) {
         return this.write('error', message, data);
     }
     
-    /**
-     * Get recent logs
+    /* Get recent logs
      */
     async getRecentLogs(lines = 100) {
         try {

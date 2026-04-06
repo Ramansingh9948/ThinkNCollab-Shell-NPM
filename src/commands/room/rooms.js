@@ -1,8 +1,8 @@
-/**
- * Rooms Command
- * 
- * Usage: rooms
- *        rooms --all
+/*
+  Rooms Command
+  
+  Usage: rooms
+         rooms --all
  */
 
 const chalk = require('chalk');

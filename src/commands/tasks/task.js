@@ -1,5 +1,5 @@
-/**
- * src/commands/tasks/task.js — View single task detail
+/*
+  src/commands/tasks/task.js — View single task detail
  */
 const chalk = require('chalk');
 

@@ -62,7 +62,7 @@ class ThinkNCollabShell extends EventEmitter {
         this.aliases   = new Map();
         this.variables = new Map();
 
-        // ★ Restore persisted session on startup
+        //  Restore persisted session on startup
         // Handles both .tncproject boot AND manual login from a previous session
         if (this.api.isAuthenticated()) {
             this.ws.setUser(this.api.getUser(), this.api.getToken());
@@ -101,40 +101,160 @@ class ThinkNCollabShell extends EventEmitter {
     }
 
     // ─── Spawn notification window ────────────────────────────────────────────
+spawnNotificationWindow() {
+    const notifyScript = path.join(__dirname, 'notification-window.js');
+    const port = this.notifyPort;
+    const env = { ...process.env, THINKNSH_NOTIFY_PORT: String(port) };
 
-    spawnNotificationWindow() {
-        const notifyScript = path.join(__dirname, 'notification-window.js');
-        const env = { ...process.env, THINKNSH_NOTIFY_PORT: String(this.notifyPort) };
+    const isWSL = process.platform === 'linux' &&
+        (() => { try { return fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft'); } catch { return false; } })();
 
-        try {
-            if (process.platform === 'win32') {
-                const isVSCode = process.env.TERM_PROGRAM === 'vscode';
-                if (isVSCode) {
-                    console.log(chalk.yellow('\n  VS Code detected — open a new terminal tab and run:'));
-                    console.log(chalk.cyan(`  $env:THINKNSH_NOTIFY_PORT=${this.notifyPort}; node "${notifyScript}"\n`));
-                } else {
-                    const nodeExe = process.execPath;
-                    spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', `"${nodeExe}" "${notifyScript}"`],
-                        { detached: true, stdio: 'ignore', env, shell: false }).unref();
-                }
-            } else if (process.platform === 'darwin') {
-                const script = `tell application "Terminal" to do script "THINKNSH_NOTIFY_PORT=${this.notifyPort} node '${notifyScript}'"`;
-                spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' }).unref();
+    const fallback = () => {
+        console.log(chalk.yellow(`\n  ⚠️  Could not open notification window.`));
+        console.log(chalk.dim(`  Open a new terminal and run:`));
+        console.log(chalk.cyan(`  THINKNSH_NOTIFY_PORT=${port} node "${notifyScript}"\n`));
+    };
+
+    try {
+        // ── WSL ──────────────────────────────────────────────────────────────
+     if (isWSL) {
+    const winScript = notifyScript
+        .replace(/^\/mnt\/([a-z])/, (_, d) => `${d.toUpperCase()}:`)
+        .replace(/\//g, '\\');
+
+    const launchWinNode = (winExe) => {
+        const p = spawn(
+            `start cmd.exe /k ""${winExe}" "${winScript}""`,
+            [],
+            { detached: true, stdio: 'ignore', env, shell: true }
+        );
+        p.on('error', fallback);
+        p.unref();
+    };
+
+    // 1. Known paths — instant
+    const known = [
+        '/mnt/c/Program Files/nodejs/node.exe',
+        '/mnt/c/Program Files (x86)/nodejs/node.exe',
+    ];
+    const found = known.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+
+    if (found) {
+        const winExe = found
+            .replace(/^\/mnt\/([a-z])/, (_, d) => `${d.toUpperCase()}:`)
+            .replace(/\//g, '\\');
+        launchWinNode(winExe);
+    } else {
+        // 2. Async where node
+        const child = spawn('cmd.exe', ['/c', 'where', 'node'], {
+            stdio: ['ignore', 'pipe', 'ignore']
+        });
+        let out = '';
+        child.stdout.on('data', d => out += d);
+        child.on('close', () => {
+            const winExe = out.trim().split('\n')[0]?.trim();
+            if (winExe?.endsWith('.exe')) {
+                launchWinNode(winExe);
             } else {
-                const terminals = [
-                    ['gnome-terminal', ['--', 'node', notifyScript]],
-                    ['xterm',          ['-e', `node "${notifyScript}"`]],
-                    ['konsole',        ['--noclose', '-e', 'node', notifyScript]],
-                ];
-                for (const [cmd, args] of terminals) {
-                    try { spawn(cmd, args, { detached: true, stdio: 'ignore', env }).unref(); break; } catch {}
-                }
+                // 3. Last resort
+                const p = spawn(
+                    `start cmd.exe /k "wsl.exe -- bash -c 'THINKNSH_NOTIFY_PORT=${port} node \\"${notifyScript}\\"; read'"`,
+                    [],
+                    { detached: true, stdio: 'ignore', shell: true }
+                );
+                p.on('error', fallback);
+                p.unref();
             }
-        } catch (err) {
-            console.log(chalk.yellow(`⚠️  Could not spawn notification window: ${err.message}`));
-            console.log(chalk.dim(`   Run manually: node "${notifyScript}"`));
-        }
+        });
     }
+
+        // ── Windows native ────────────────────────────────────────────────────
+} else if (process.platform === 'win32') {
+    const nodeExe = process.execPath;
+    const isVSCode = process.env.TERM_PROGRAM === 'vscode';
+
+    if (isVSCode) {
+        console.log(chalk.yellow('\n  VS Code detected — open a new terminal tab and run:'));
+        console.log(chalk.cyan(`  $env:THINKNSH_NOTIFY_PORT=${port}; node "${notifyScript}"\n`));
+    } else {
+        const launchCmd = () => {
+            // shell:true — Windows quoting issues handle ho jaate hain
+            const p = spawn(
+                `start cmd.exe /k ""${nodeExe}" "${notifyScript}""`,
+                [],
+                { detached: true, stdio: 'ignore', env, shell: true }
+            );
+            p.on('error', fallback);
+            p.unref();
+        };
+
+        const wt = spawn('wt.exe', [
+            'cmd.exe', '/k', `"${nodeExe}" "${notifyScript}"`
+        ], { detached: true, stdio: 'ignore', env });
+        wt.on('error', launchCmd);
+        wt.unref();
+    }
+        // ── macOS ─────────────────────────────────────────────────────────────
+        } else if (process.platform === 'darwin') {
+            const nodeExe = process.execPath;
+            const terminalScript = `
+                tell application "Terminal"
+                    do script "THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'"
+                    activate
+                end tell
+            `;
+            try {
+                spawn('osascript', ['-e', terminalScript], {
+                    detached: true, stdio: 'ignore'
+                }).unref();
+            } catch {
+                // iTerm2 fallback
+                const itermScript = `
+                    tell application "iTerm2"
+                        tell current window
+                            create tab with default profile
+                            tell current session of current tab
+                                write text "THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'"
+                            end tell
+                        end tell
+                    end tell
+                `;
+                try {
+                    spawn('osascript', ['-e', itermScript], {
+                        detached: true, stdio: 'ignore'
+                    }).unref();
+                } catch { fallback(); }
+            }
+
+        // ── Linux native ──────────────────────────────────────────────────────
+        } else {
+            const nodeExe = process.execPath;
+            const bashCmd = `THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'; read`;
+            const terminals = [
+                ['gnome-terminal', ['--', 'bash', '-c', bashCmd]],
+                ['konsole',        ['--noclose', '-e', 'bash', '-c', bashCmd]],
+                ['xfce4-terminal', ['--hold', '-e', `bash -c "${bashCmd}"`]],
+                ['tilix',          ['-e', `bash -c "${bashCmd}"`]],
+                ['alacritty',      ['-e', 'bash', '-c', bashCmd]],
+                ['kitty',          ['bash', '-c', bashCmd]],
+                ['xterm',          ['-hold', '-e', `bash -c "${bashCmd}"`]],
+            ];
+
+            let spawned = false;
+            for (const [bin, args] of terminals) {
+                try {
+                    spawn(bin, args, { detached: true, stdio: 'ignore', env }).unref();
+                    spawned = true;
+                    break;
+                } catch {}
+            }
+            if (!spawned) fallback();
+        }
+
+    } catch (err) {
+        fallback();
+    }
+}
 
     // ─── WebSocket → Shell + TCP bridge ──────────────────────────────────────
 
@@ -539,7 +659,7 @@ async execute(input) {
         try { const figlet = require('figlet'); console.log(chalk.cyan(figlet.textSync('ThinkNCollab', { font: 'Standard' }))); } catch {}
         console.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════╗
-║     ThinkNCollab Shell v0.0.8                        ║
+║     ThinkNCollab Shell v0.0.08                       ║
 ║     Type 'help' for commands                         ║
 ╚══════════════════════════════════════════════════════╝`));
     }

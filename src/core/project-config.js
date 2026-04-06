@@ -1,17 +1,17 @@
-/**
- * src/core/project-config.js
- *
- * Shell-side reader for .tncproject binary files.
- * NO crypto code — shell only reads the plaintext roomId prefix,
- * then sends the raw file to the server for decryption.
- *
- * File layout (written by server):
- *   [4  bytes] "TNCP" magic
- *   [1  byte]  version 0x01
- *   [24 bytes] roomId ASCII hex  ← only readable part
- *   [12 bytes] AES-GCM IV        ← opaque
- *   [16 bytes] AES-GCM auth tag  ← opaque
- *   [N  bytes] encrypted payload ← opaque
+/*
+ src/core/project-config.js
+
+ Shell-side reader for .tncproject binary files.
+ NO crypto code — shell only reads the plaintext roomId prefix,
+ then sends the raw file to the server for decryption.
+
+ File layout (written by server):
+   [4  bytes] "TNCP" magic
+   [1  byte]  version 0x01
+   [24 bytes] roomId ASCII hex  ← only readable part
+   [12 bytes] AES-GCM IV        ← opaque
+   [16 bytes] AES-GCM auth tag  ← opaque
+   [N  bytes] encrypted payload ← opaque
  */
 
 const fs   = require('fs-extra');
@@ -36,11 +36,11 @@ function findConfigFile(startDir = process.cwd()) {
     return null;
 }
 
-/**
- * Read and lightly validate a .tncproject file.
- * Returns { filePath, roomId, fileBase64 } — no decryption.
- *
- * @throws if file is missing, wrong format, or roomId looks wrong  http://localhost:3001
+/*
+ Read and lightly validate a .tncproject file.
+ Returns { filePath, roomId, fileBase64 } — no decryption.
+
+ @throws if file is missing, wrong format, or roomId looks wrong  http://localhost:3001
  */
 function loadProjectConfig(startDir = process.cwd()) {
     const filePath = findConfigFile(startDir);

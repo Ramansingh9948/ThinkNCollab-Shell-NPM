@@ -1,5 +1,5 @@
-/**
- * commands/auth/login.js
+/*
+  commands/auth/login.js
  */
 
 const chalk    = require('chalk');

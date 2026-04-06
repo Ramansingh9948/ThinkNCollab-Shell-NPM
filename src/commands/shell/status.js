@@ -1,7 +1,7 @@
-/**
- * Status Command
- * 
- * Usage: status
+/*
+  Status Command
+  
+  Usage: status
  */
 
 const chalk = require('chalk');

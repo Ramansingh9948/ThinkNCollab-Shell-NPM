@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-/**
- * ThinkNCollab Shell - CLI Entry Point
- * 
- * Usage:
- *   thinknsh              - Start interactive shell
- *   thinknsh <command>    - Run single command
- *   thinknsh --help       - Show help
+/*
+  ThinkNCollab Shell - CLI Entry Point
+  
+  Usage:
+    thinknsh              - Start interactive shell
+    thinknsh <command>    - Run single command
+    thinknsh --help       - Show help
  */
 
 const path = require('path');

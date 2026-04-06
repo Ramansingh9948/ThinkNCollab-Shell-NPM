@@ -1,5 +1,5 @@
-/**
- * src/commands/index.js — Command Registry
+/*
+  src/commands/index.js — Command Registry
  */
 const chalk = require('chalk');
 
