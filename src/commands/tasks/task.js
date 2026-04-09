@@ -17,6 +17,9 @@ module.exports = {
 
         const taskId = args[0];
 
+
+
+        
         try {
             const task = await shell.api._request('GET', `/thinknsh/${taskId}/cli`);
 
