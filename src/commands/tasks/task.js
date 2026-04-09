@@ -14,6 +14,9 @@ module.exports = {
             console.log(chalk.red('Usage: task <task-id>'));
             return;
         }
+
+
+        
         const taskId = args[0];
         try {
             const task = await shell.api._request('GET', `/thinknsh/${taskId}/cli`);
