@@ -197,6 +197,12 @@ spawnNotificationWindow() {
         // ── macOS ─────────────────────────────────────────────────────────────
         } else if (process.platform === 'darwin') {
             const nodeExe = process.execPath;
+             const isVSCode = process.env.TERM_PROGRAM === 'vscode';
+    if (isVSCode) {
+        console.log(chalk.yellow(`\n  VS Code detected — open a new terminal tab and run:`));
+        console.log(chalk.cyan(`  THINKNSH_NOTIFY_PORT=${port} node "${notifyScript}"\n`));
+        return;
+    }
             const terminalScript = `
                 tell application "Terminal"
                     do script "THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'"
@@ -428,14 +434,18 @@ setupWebSocketHandlers() {
         return true;
     }
 
-    // ─── Execute ──────────────────────────────────────────────────────────────
-// shell.js — execute() mein ye change karo
 async execute(input) {
     if (!input.trim()) return;
 
     const args    = this.parseCommand(input);
     const cmdName = args[0].toLowerCase();
     const cmdArgs = args.slice(1);
+
+    // Skip sensitive commands
+    const skipLog = ['login', 'logout', 'set', 'unset'];
+    if (!skipLog.includes(cmdName)) {
+        await this.api.logEvent('command', null, { cmd: cmdName });
+    }
 
     if (this.commands.has(cmdName)) {
         try { await this.commands.get(cmdName).handler(cmdArgs, this); }
@@ -452,8 +462,7 @@ async execute(input) {
         }
     }
 
-    // ★ Windows pe known-useless OS commands block karo
-    const blockedOnWindows = [ 'open', 'which', 'grep', 'touch', 'cat'];
+    const blockedOnWindows = ['open', 'which', 'grep', 'touch', 'cat'];
     if (process.platform === 'win32' && blockedOnWindows.includes(cmdName)) {
         console.log(chalk.red(`'${cmdName}' is not a thinknsh command.`));
         console.log(chalk.dim(`  Type 'help' to see available commands.`));

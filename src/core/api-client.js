@@ -10,7 +10,7 @@ const os    = require('os');
 
 class ThinkNCollabAPI {
 
-    constructor(options = {}) {
+    constructor(options = {}) { 
         this.apiUrl      = (options.apiUrl || 'https://thinkncollab.com').replace(/\/$/, '');
         this.wsUrl       = (options.wsUrl  || 'https://thinkncollab.com').replace(/\/$/, '');
         this.session     = null;
