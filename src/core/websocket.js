@@ -113,6 +113,7 @@ class WebSocketManager extends EventEmitter {
      *   { userId, name, userType }                ← legacy
      */
     setUser(user, token = null) {
+        this._user = user;
         if (!user) return;
 
         if (token) this._authToken = token;
@@ -295,27 +296,27 @@ class WebSocketManager extends EventEmitter {
         return Promise.resolve({ success: true });
     }
 
-    // ─── Send message ─────────────────────────────────────────────────────────
+ sendMessage(message, replyTo = null) {
+    return new Promise((resolve, reject) => {
+        if (!this.socket?.connected) return reject(new Error('Not connected'));
 
-    sendMessage(message) {
-        if (!this.connected || !this.socket) {
-            this.messageQueue.push(message);
-            return Promise.resolve({ queued: true });
-        }
-        if (!this.roomId)      return Promise.reject(new Error('Not in a room — run: join <room-id>'));
-        if (!this.currentUser) return Promise.reject(new Error('Not logged in — run: login'));
+        const roomId = this.roomId;
+        if (!roomId) return reject(new Error('Not in any room. Use: join <room-id>'));
+
+        if (!this.currentUser) return reject(new Error('Not authenticated. Run: login'));
 
         this.socket.emit('thinknsh:message', {
-            roomId:   this.roomId,
+            roomId,
             userId:   this.currentUser.userId,
             name:     this.currentUser.name,
-            userType: this.currentUser.userType,
+            userType: this.currentUser.userType || 'User',
             message,
+            replyTo:  replyTo || null
         });
 
-        return Promise.resolve({ success: true });
-    }
-
+        resolve();
+    });
+}
     // ─── History ──────────────────────────────────────────────────────────────
 
     getHistory(limit = 30, skip = 0) {

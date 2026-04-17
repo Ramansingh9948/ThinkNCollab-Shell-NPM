@@ -652,7 +652,7 @@ async execute(input) {
                 stdio: 'inherit'
             });
             child.on('close', (code) => {
-                // Update currentDir in case command changed it (cd won't but others might)  https://thinkncollab.com
+                // Update currentDir in case command changed it (cd won't but others might)  http://localhost:3001
                 try { this.currentDir = process.cwd(); } catch {}
                 process.stdout.write('\r\n');
                 resolve();
@@ -668,7 +668,7 @@ async execute(input) {
         try { const figlet = require('figlet'); console.log(chalk.cyan(figlet.textSync('ThinkNCollab', { font: 'Standard' }))); } catch {}
         console.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════╗
-║     ThinkNCollab Shell v0.0.08                       ║
+║     ThinkNCollab Shell v0.0.10                       ║
 ║     Type 'help' for commands                         ║
 ╚══════════════════════════════════════════════════════╝`));
     }
