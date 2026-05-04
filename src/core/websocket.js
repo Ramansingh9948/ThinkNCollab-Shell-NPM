@@ -74,6 +74,9 @@ class WebSocketManager extends EventEmitter {
                     this.connected = false;
                     this.emit('disconnected', { reason });
                 });
+                this.socket.on('task:verdict', (data) => {
+                    this.emit('task:verdict', data);
+                });
 
                 this.socket.on('reconnect', () => {
                     this.connected = true;

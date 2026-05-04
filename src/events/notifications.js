@@ -109,10 +109,9 @@ class NotificationManager extends EventEmitter {
     
     /* Play notification sound
      */
-    playSound() {
-        // TODO: Implement sound playing
-        // This would use 'sound-play' or similar package
-    }
+   playSound() {
+    process.stdout.write('\x07'); // terminal bell — zero dependencies
+}
     
     /* Mark notification as read
      */

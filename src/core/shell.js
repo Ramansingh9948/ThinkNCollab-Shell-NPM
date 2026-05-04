@@ -1,6 +1,6 @@
 /**
- * src/core/shell.js — ThinkNCollab Shell Core
- */
+ * src/core/shell.js — ThinkNCollab Shell Core sound
+ */ 
 
 const path   = require('path');
 const fs     = require('fs-extra');
@@ -282,6 +282,30 @@ setupWebSocketHandlers() {
         this.api.startHeartbeat();
         this.pushNotification({ type: 'connected', socketId: 'reconnected' });
     });
+    this.ws.on('task:verdict', (d) => {
+    const passed = d.passed;
+    const border = passed ? chalk.green('─'.repeat(52)) : chalk.red('─'.repeat(52));
+    const badge  = passed ? chalk.bgGreen.black(' PASS ') : chalk.bgRed.white(' FAIL ');
+
+    console.log('\n' + border);
+    console.log(`  ${badge}  ${chalk.bold(d.title || 'Task')}  ${passed ? chalk.green('✅ PASSED') : chalk.red('❌ FAILED')}`);
+    console.log(`  ${chalk.dim('Reason :')} ${passed ? chalk.green(d.reason) : chalk.red(d.reason)}`);
+    if (d.diff) {
+        console.log(`  ${chalk.dim('Expected:')} ${chalk.cyan(JSON.stringify(d.diff.expected ?? d.diff.conditions))}`);
+        console.log(`  ${chalk.dim('Actual  :')} ${chalk.yellow(JSON.stringify(d.diff.actual))}`);
+    }
+    console.log(`  ${chalk.dim('At      :')} ${chalk.dim(new Date(d.at || Date.now()).toLocaleTimeString())}`);
+    console.log(border + '\n');
+
+    this.pushNotification({
+        type:   'verdict',
+        passed,
+        title:  d.title,
+        reason: d.reason,
+        taskId: d.taskId,
+        at:     d.at
+    });
+});
 
     this.ws.on('message', (d) => {
         const myId = this.api.getUser()?._id;
