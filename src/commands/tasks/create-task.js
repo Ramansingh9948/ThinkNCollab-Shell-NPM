@@ -16,7 +16,7 @@ module.exports = {
 
         try {
             // Fetch columns of current room's board
-            const { columns } = await shell.api._request('GET', `/rooms/${roomId}/cli/columns`);
+            const { columns } = await shell.api._request('GET', `/thinknsh/${roomId}/cli/columns`);
             if (!columns?.length) {
                 console.log(chalk.red('❌ No columns found in this room\'s board'));
                 return;
@@ -78,7 +78,7 @@ module.exports = {
                 source:      'cli',
             };
 
-            const result = await shell.api._request('POST', `/${roomId}/cli/tasks`, payload);
+            const result = await shell.api._request('POST', `/thinknsh/${roomId}/cli/tasks`, payload);
 
             console.log(chalk.green(`\n✅ Task created: "${result.task.title}"`));
             console.log(chalk.dim(`   ID: ${result.task._id}`));

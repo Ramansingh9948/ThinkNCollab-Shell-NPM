@@ -42,7 +42,7 @@ module.exports = {
 
     // ── Basic Info ────────────────────────────────────────────────────────────
     console.log(chalk.cyan('\n  ─── Task Info ───────────────────────────────────'));
-    console.log(`  ${chalk.dim('id      ')}  ${chalk.dim(task._id)}`);
+console.log(`  ${chalk.dim('id      ')}  ${chalk.dim(task._id)}${task.taskID ? chalk.cyan('  #' + task.taskID) : ''}`);
     console.log(`  ${chalk.dim('title   ')}  ${chalk.bold(task.title)}`);
     console.log(`  ${chalk.dim('status  ')}  ${stColor(task.status)}`);
     console.log(`  ${chalk.dim('priority')}  ${prColor(task.priority)}`);

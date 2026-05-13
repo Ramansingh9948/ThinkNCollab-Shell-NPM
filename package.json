@@ -41,5 +41,8 @@
     "bin/",
     "src/",
     "README.md"
-  ]
+  ],
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
 }

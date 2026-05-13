@@ -1,17 +1,17 @@
 /**
  * src/core/shell.js — ThinkNCollab Shell Core sound
- */ 
+ */
 
-const path   = require('path');
-const fs     = require('fs-extra');
-const os     = require('os');
-const chalk  = require('chalk');
-const net    = require('net');
+const path = require('path');
+const fs = require('fs-extra');
+const os = require('os');
+const chalk = require('chalk');
+const net = require('net');
 const { spawn } = require('child_process');
-const EventEmitter     = require('events');
+const EventEmitter = require('events');
 const WebSocketManager = require('./websocket');
-const CommandRegistry  = require('../commands');
-const ThinkNCollabAPI  = require('./api-client');
+const CommandRegistry = require('../commands');
+const ThinkNCollabAPI = require('./api-client');
 const { loadProjectConfig, hasProjectConfig } = require('./project-config');
 
 function getAvailablePort(startPort) {
@@ -32,10 +32,10 @@ class ThinkNCollabShell extends EventEmitter {
 
         this.config = {
             historyFile: path.join(os.homedir(), '.thinknsh_history'),
-            configDir:   path.join(os.homedir(), '.thinkncollab'),
-            maxHistory:  1000,
+            configDir: path.join(os.homedir(), '.thinkncollab'),
+            maxHistory: 1000,
             websocket: {
-                serverUrl:   options.serverUrl   || 'https://thinkncollab.com',
+                serverUrl: options.serverUrl || 'https://thinkncollab.com',
                 autoConnect: options.autoConnect || false
             },
             ...options
@@ -43,23 +43,23 @@ class ThinkNCollabShell extends EventEmitter {
 
         fs.ensureDirSync(this.config.configDir);
 
-        this.ws         = new WebSocketManager(this.config.websocket);
+        this.ws = new WebSocketManager(this.config.websocket);
         this.currentDir = process.cwd();
-        this.username   = os.userInfo().username;
-        this.history    = [];
-        this.running    = false;
+        this.username = os.userInfo().username;
+        this.history = [];
+        this.running = false;
 
         // TCP notification IPC
         this.notifyClients = new Set();
-        this.tcpServer     = null;
+        this.tcpServer = null;
 
         this.api = new ThinkNCollabAPI({
             apiUrl: options.apiUrl || 'https://thinkncollab.com',
-            wsUrl:  options.wsUrl  || 'https://thinkncollab.com'
+            wsUrl: options.wsUrl || 'https://thinkncollab.com'
         });
 
-        this.commands  = new Map();
-        this.aliases   = new Map();
+        this.commands = new Map();
+        this.aliases = new Map();
         this.variables = new Map();
 
         //  Restore persisted session on startup
@@ -96,259 +96,271 @@ class ThinkNCollabShell extends EventEmitter {
         if (this.notifyClients.size === 0) return;
         const line = JSON.stringify(data) + '\n';
         for (const client of this.notifyClients) {
-            try { client.write(line); } catch {}
+            try { client.write(line); } catch { }
         }
     }
 
     // ─── Spawn notification window ────────────────────────────────────────────
-spawnNotificationWindow() {
-    const notifyScript = path.join(__dirname, 'notification-window.js');
-    const port = this.notifyPort;
-    const env = { ...process.env, THINKNSH_NOTIFY_PORT: String(port) };
+    spawnNotificationWindow() {
+        const notifyScript = path.join(__dirname, 'notification-window.js');
+        const port = this.notifyPort;
+        const env = { ...process.env, THINKNSH_NOTIFY_PORT: String(port) };
 
-    const isWSL = process.platform === 'linux' &&
-        (() => { try { return fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft'); } catch { return false; } })();
+        const isWSL = process.platform === 'linux' &&
+            (() => { try { return fs.readFileSync('/proc/version', 'utf8').toLowerCase().includes('microsoft'); } catch { return false; } })();
 
-    const fallback = () => {
-        console.log(chalk.yellow(`\n  ⚠️  Could not open notification window.`));
-        console.log(chalk.dim(`  Open a new terminal and run:`));
-        console.log(chalk.cyan(`  THINKNSH_NOTIFY_PORT=${port} node "${notifyScript}"\n`));
-    };
-
-    try {
-        // ── WSL ──────────────────────────────────────────────────────────────
-     if (isWSL) {
-    const winScript = notifyScript
-        .replace(/^\/mnt\/([a-z])/, (_, d) => `${d.toUpperCase()}:`)
-        .replace(/\//g, '\\');
-
-    const launchWinNode = (winExe) => {
-        const p = spawn(
-            `start cmd.exe /k ""${winExe}" "${winScript}""`,
-            [],
-            { detached: true, stdio: 'ignore', env, shell: true }
-        );
-        p.on('error', fallback);
-        p.unref();
-    };
-
-    // 1. Known paths — instant
-    const known = [
-        '/mnt/c/Program Files/nodejs/node.exe',
-        '/mnt/c/Program Files (x86)/nodejs/node.exe',
-    ];
-    const found = known.find(p => { try { return fs.existsSync(p); } catch { return false; } });
-
-    if (found) {
-        const winExe = found
-            .replace(/^\/mnt\/([a-z])/, (_, d) => `${d.toUpperCase()}:`)
-            .replace(/\//g, '\\');
-        launchWinNode(winExe);
-    } else {
-        // 2. Async where node
-        const child = spawn('cmd.exe', ['/c', 'where', 'node'], {
-            stdio: ['ignore', 'pipe', 'ignore']
-        });
-        let out = '';
-        child.stdout.on('data', d => out += d);
-        child.on('close', () => {
-            const winExe = out.trim().split('\n')[0]?.trim();
-            if (winExe?.endsWith('.exe')) {
-                launchWinNode(winExe);
-            } else {
-                // 3. Last resort
-                const p = spawn(
-                    `start cmd.exe /k "wsl.exe -- bash -c 'THINKNSH_NOTIFY_PORT=${port} node \\"${notifyScript}\\"; read'"`,
-                    [],
-                    { detached: true, stdio: 'ignore', shell: true }
-                );
-                p.on('error', fallback);
-                p.unref();
-            }
-        });
-    }
-
-        // ── Windows native ────────────────────────────────────────────────────
-} else if (process.platform === 'win32') {
-    const nodeExe = process.execPath;
-    const isVSCode = process.env.TERM_PROGRAM === 'vscode';
-
-    if (isVSCode) {
-        console.log(chalk.yellow('\n  VS Code detected — open a new terminal tab and run:'));
-        console.log(chalk.cyan(`  $env:THINKNSH_NOTIFY_PORT=${port}; node "${notifyScript}"\n`));
-    } else {
-        const launchCmd = () => {
-            // shell:true — Windows quoting issues handle ho jaate hain
-            const p = spawn(
-                `start cmd.exe /k ""${nodeExe}" "${notifyScript}""`,
-                [],
-                { detached: true, stdio: 'ignore', env, shell: true }
-            );
-            p.on('error', fallback);
-            p.unref();
+        const fallback = () => {
+            console.log(chalk.yellow(`\n  ⚠️  Could not open notification window.`));
+            console.log(chalk.dim(`  Open a new terminal and run:`));
+            console.log(chalk.cyan(`  THINKNSH_NOTIFY_PORT=${port} node "${notifyScript}"\n`));
         };
 
-        const wt = spawn('wt.exe', [
-            'cmd.exe', '/k', `"${nodeExe}" "${notifyScript}"`
-        ], { detached: true, stdio: 'ignore', env });
-        wt.on('error', launchCmd);
-        wt.unref();
-    }
-        // ── macOS ─────────────────────────────────────────────────────────────
-        } else if (process.platform === 'darwin') {
-            const nodeExe = process.execPath;
-             const isVSCode = process.env.TERM_PROGRAM === 'vscode';
-    if (isVSCode) {
-        console.log(chalk.yellow(`\n  VS Code detected — open a new terminal tab and run:`));
-        console.log(chalk.cyan(`  THINKNSH_NOTIFY_PORT=${port} node "${notifyScript}"\n`));
-        return;
-    }
-            const terminalScript = `
-                tell application "Terminal"
-                    do script "THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'"
-                    activate
-                end tell
-            `;
-            try {
-                spawn('osascript', ['-e', terminalScript], {
-                    detached: true, stdio: 'ignore'
-                }).unref();
-            } catch {
-                // iTerm2 fallback
-                const itermScript = `
-                    tell application "iTerm2"
-                        tell current window
-                            create tab with default profile
-                            tell current session of current tab
-                                write text "THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'"
-                            end tell
-                        end tell
-                    end tell
-                `;
+        try {
+            // ── WSL ──────────────────────────────────────────────────────────────
+            if (isWSL) {
+                const winScript = notifyScript
+                    .replace(/^\/mnt\/([a-z])/, (_, d) => `${d.toUpperCase()}:`)
+                    .replace(/\//g, '\\');
+
+                const launchWinNode = (winExe) => {
+                    const p = spawn(
+                        `start cmd.exe /k ""${winExe}" "${winScript}""`,
+                        [],
+                        { detached: true, stdio: 'ignore', env, shell: true }
+                    );
+                    p.on('error', fallback);
+                    p.unref();
+                };
+
+                // 1. Known paths — instant
+                const known = [
+                    '/mnt/c/Program Files/nodejs/node.exe',
+                    '/mnt/c/Program Files (x86)/nodejs/node.exe',
+                ];
+                const found = known.find(p => { try { return fs.existsSync(p); } catch { return false; } });
+
+                if (found) {
+                    const winExe = found
+                        .replace(/^\/mnt\/([a-z])/, (_, d) => `${d.toUpperCase()}:`)
+                        .replace(/\//g, '\\');
+                    launchWinNode(winExe);
+                } else {
+                    // 2. Async where node
+                    const child = spawn('cmd.exe', ['/c', 'where', 'node'], {
+                        stdio: ['ignore', 'pipe', 'ignore']
+                    });
+                    let out = '';
+                    child.stdout.on('data', d => out += d);
+                    child.on('close', () => {
+                        const winExe = out.trim().split('\n')[0]?.trim();
+                        if (winExe?.endsWith('.exe')) {
+                            launchWinNode(winExe);
+                        } else {
+                            // 3. Last resort
+                            const p = spawn(
+                                `start cmd.exe /k "wsl.exe -- bash -c 'THINKNSH_NOTIFY_PORT=${port} node \\"${notifyScript}\\"; read'"`,
+                                [],
+                                { detached: true, stdio: 'ignore', shell: true }
+                            );
+                            p.on('error', fallback);
+                            p.unref();
+                        }
+                    });
+                }
+
+                // ── Windows native ────────────────────────────────────────────────────
+            } else if (process.platform === 'win32') {
+                const nodeExe = process.execPath;
+                const isVSCode = process.env.TERM_PROGRAM === 'vscode';
+
+                if (isVSCode) {
+                    console.log(chalk.yellow('\n  VS Code detected — open a new terminal tab and run:'));
+                    console.log(chalk.cyan(`  $env:THINKNSH_NOTIFY_PORT=${port}; node "${notifyScript}"\n`));
+                } else {
+                    const launchCmd = () => {
+                        // shell:true — Windows quoting issues handle ho jaate hain
+                        const p = spawn(
+                            `start cmd.exe /k ""${nodeExe}" "${notifyScript}""`,
+                            [],
+                            { detached: true, stdio: 'ignore', env, shell: true }
+                        );
+                        p.on('error', fallback);
+                        p.unref();
+                    };
+
+                    const wt = spawn('wt.exe', [
+                        'cmd.exe', '/k', `"${nodeExe}" "${notifyScript}"`
+                    ], { detached: true, stdio: 'ignore', env });
+                    wt.on('error', launchCmd);
+                    wt.unref();
+                }
+                // ── macOS ─────────────────────────────────────────────────────────────
+            } else if (process.platform === 'darwin') {
+                const nodeExe = process.execPath;
+
+                // Better VS Code detection - multiple checks
+                const isVSCode = process.env.TERM_PROGRAM === 'vscode' ||
+                    process.env.VSCODE_INJECTION === '1' ||
+                    process.env.TERM_PROGRAM?.includes('vscode') ||
+                    process.env.VSCODE_CWD !== undefined;
+
+                if (isVSCode) {
+                    console.log(chalk.yellow(`\n  ⚠️  VS Code terminal detected`));
+                    console.log(chalk.dim(`  Notification window can't auto-open in VS Code.`));
+                    console.log(chalk.cyan(`  Please open Terminal.app and run:\n`));
+                    console.log(chalk.white(`  THINKNSH_NOTIFY_PORT=${port} node "${notifyScript}"\n`));
+                    return;
+                }
+
+                // Rest of the macOS code for Terminal.app/iTerm2
+                const terminalScript = `
+        tell application "Terminal"
+            do script "THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'"
+            activate
+        end tell
+    `;
                 try {
-                    spawn('osascript', ['-e', itermScript], {
+                    spawn('osascript', ['-e', terminalScript], {
                         detached: true, stdio: 'ignore'
                     }).unref();
-                } catch { fallback(); }
+                } catch {
+                    // iTerm2 fallback
+                    const itermScript = `
+            tell application "iTerm2"
+                tell current window
+                    create tab with default profile
+                    tell current session of current tab
+                        write text "THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'"
+                    end tell
+                end tell
+            end tell
+        `;
+                    try {
+                        spawn('osascript', ['-e', itermScript], {
+                            detached: true, stdio: 'ignore'
+                        }).unref();
+                    } catch {
+                        console.log(chalk.yellow(`  ⚠️  Could not open notification window`));
+                    }
+                }
+
+                // ── Linux native ──────────────────────────────────────────────────────
+            } else {
+                const nodeExe = process.execPath;
+                const bashCmd = `THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'; read`;
+                const terminals = [
+                    ['gnome-terminal', ['--', 'bash', '-c', bashCmd]],
+                    ['konsole', ['--noclose', '-e', 'bash', '-c', bashCmd]],
+                    ['xfce4-terminal', ['--hold', '-e', `bash -c "${bashCmd}"`]],
+                    ['tilix', ['-e', `bash -c "${bashCmd}"`]],
+                    ['alacritty', ['-e', 'bash', '-c', bashCmd]],
+                    ['kitty', ['bash', '-c', bashCmd]],
+                    ['xterm', ['-hold', '-e', `bash -c "${bashCmd}"`]],
+                ];
+
+                let spawned = false;
+                for (const [bin, args] of terminals) {
+                    try {
+                        spawn(bin, args, { detached: true, stdio: 'ignore', env }).unref();
+                        spawned = true;
+                        break;
+                    } catch { }
+                }
+                if (!spawned) fallback();
             }
 
-        // ── Linux native ──────────────────────────────────────────────────────
-        } else {
-            const nodeExe = process.execPath;
-            const bashCmd = `THINKNSH_NOTIFY_PORT=${port} '${nodeExe}' '${notifyScript}'; read`;
-            const terminals = [
-                ['gnome-terminal', ['--', 'bash', '-c', bashCmd]],
-                ['konsole',        ['--noclose', '-e', 'bash', '-c', bashCmd]],
-                ['xfce4-terminal', ['--hold', '-e', `bash -c "${bashCmd}"`]],
-                ['tilix',          ['-e', `bash -c "${bashCmd}"`]],
-                ['alacritty',      ['-e', 'bash', '-c', bashCmd]],
-                ['kitty',          ['bash', '-c', bashCmd]],
-                ['xterm',          ['-hold', '-e', `bash -c "${bashCmd}"`]],
-            ];
-
-            let spawned = false;
-            for (const [bin, args] of terminals) {
-                try {
-                    spawn(bin, args, { detached: true, stdio: 'ignore', env }).unref();
-                    spawned = true;
-                    break;
-                } catch {}
-            }
-            if (!spawned) fallback();
+        } catch (err) {
+            fallback();
         }
-
-    } catch (err) {
-        fallback();
     }
-}
 
     // ─── WebSocket → Shell + TCP bridge ──────────────────────────────────────
 
-setupWebSocketHandlers() {
-    this.ws.on('connected', (d) => {
-        this.api.logEvent('connected', null, { socketId: d?.socketId });
-        this.api.startHeartbeat();
-        this.pushNotification({ type: 'connected', socketId: d?.socketId });
-    });
+    setupWebSocketHandlers() {
+        this.ws.on('connected', (d) => {
+            this.api.logEvent('connected', null, { socketId: d?.socketId });
+            this.api.startHeartbeat();
+            this.pushNotification({ type: 'connected', socketId: d?.socketId });
+        });
 
-    this.ws.on('disconnected', (d) => {
-        this.api.logEvent('disconnected', null, { reason: d?.reason });
-        this.api.stopHeartbeat();
-        this.pushNotification({ type: 'disconnected', reason: d?.reason });
-    });
+        this.ws.on('disconnected', (d) => {
+            this.api.logEvent('disconnected', null, { reason: d?.reason });
+            this.api.stopHeartbeat();
+            this.pushNotification({ type: 'disconnected', reason: d?.reason });
+        });
 
-    this.ws.on('reconnected', () => {
-        this.api.logEvent('reconnected');
-        this.api.startHeartbeat();
-        this.pushNotification({ type: 'connected', socketId: 'reconnected' });
-    });
-    this.ws.on('task:verdict', (d) => {
-    const passed = d.passed;
-    const border = passed ? chalk.green('─'.repeat(52)) : chalk.red('─'.repeat(52));
-    const badge  = passed ? chalk.bgGreen.black(' PASS ') : chalk.bgRed.white(' FAIL ');
+        this.ws.on('reconnected', () => {
+            this.api.logEvent('reconnected');
+            this.api.startHeartbeat();
+            this.pushNotification({ type: 'connected', socketId: 'reconnected' });
+        });
+        this.ws.on('task:verdict', (d) => {
+            const passed = d.passed;
+            const border = passed ? chalk.green('─'.repeat(52)) : chalk.red('─'.repeat(52));
+            const badge = passed ? chalk.bgGreen.black(' PASS ') : chalk.bgRed.white(' FAIL ');
 
-    console.log('\n' + border);
-    console.log(`  ${badge}  ${chalk.bold(d.title || 'Task')}  ${passed ? chalk.green('✅ PASSED') : chalk.red('❌ FAILED')}`);
-    console.log(`  ${chalk.dim('Reason :')} ${passed ? chalk.green(d.reason) : chalk.red(d.reason)}`);
-    if (d.diff) {
-        console.log(`  ${chalk.dim('Expected:')} ${chalk.cyan(JSON.stringify(d.diff.expected ?? d.diff.conditions))}`);
-        console.log(`  ${chalk.dim('Actual  :')} ${chalk.yellow(JSON.stringify(d.diff.actual))}`);
+            console.log('\n' + border);
+            console.log(`  ${badge}  ${chalk.bold(d.title || 'Task')}  ${passed ? chalk.green('✅ PASSED') : chalk.red('❌ FAILED')}`);
+            console.log(`  ${chalk.dim('Reason :')} ${passed ? chalk.green(d.reason) : chalk.red(d.reason)}`);
+            if (d.diff) {
+                console.log(`  ${chalk.dim('Expected:')} ${chalk.cyan(JSON.stringify(d.diff.expected ?? d.diff.conditions))}`);
+                console.log(`  ${chalk.dim('Actual  :')} ${chalk.yellow(JSON.stringify(d.diff.actual))}`);
+            }
+            console.log(`  ${chalk.dim('At      :')} ${chalk.dim(new Date(d.at || Date.now()).toLocaleTimeString())}`);
+            console.log(border + '\n');
+
+            this.pushNotification({
+                type: 'verdict',
+                passed,
+                title: d.title,
+                reason: d.reason,
+                taskId: d.taskId,
+                at: d.at
+            });
+        });
+
+        this.ws.on('message', (d) => {
+            const myId = this.api.getUser()?._id;
+            if (myId && d.userId === myId) return;
+            this.pushNotification({ type: 'message', from: d.username, text: d.message });
+        });
+
+        this.ws.on('messageHistory', (messages) => {
+            if (!messages?.length) return;
+            console.log(chalk.dim('\n  ─── Room History ───────────────────────────────'));
+            messages.forEach(msg => {
+                const from = msg.name || msg.username || msg.sender?.name || 'Unknown';
+                const text = msg.message || msg.content || msg.text || '';
+                const ts = msg.timestamp || msg.createdAt;
+                const timeStr = ts ? chalk.dim(`[${new Date(ts).toLocaleTimeString()}]`) : '';
+                console.log(`  ${timeStr} ${chalk.cyan(from + ':')} ${chalk.white(text)}`);
+            });
+            console.log(chalk.dim('  ────────────────────────────────────────────────\n'));
+        });
+
+        this.ws.on('userJoined', (d) => this.pushNotification({ type: 'userJoined', username: d.username }));
+        this.ws.on('userLeft', (d) => this.pushNotification({ type: 'userLeft', username: d.username }));
+
+        // room join/leave events
+        this.ws.on('joined', (roomId) => this.api.logEvent('room_join', roomId));
+        this.ws.on('left', (roomId) => this.api.logEvent('room_leave', roomId));
+
+        this.ws.on('notification', (d) => {
+            this.pushNotification({
+                type: 'notification',
+                level: d.type,
+                title: d.title,
+                message: d.message,
+                taskTitle: d.taskTitle,
+                assignedBy: d.assignedBy,
+            });
+        });
+
+        this.ws.on('error', (e) => {
+            console.log(chalk.red(`⚠️  WebSocket error: ${e.message}`));
+            this.pushNotification({ type: 'notification', level: 'error', title: 'WebSocket Error', message: e.message });
+        });
     }
-    console.log(`  ${chalk.dim('At      :')} ${chalk.dim(new Date(d.at || Date.now()).toLocaleTimeString())}`);
-    console.log(border + '\n');
-
-    this.pushNotification({
-        type:   'verdict',
-        passed,
-        title:  d.title,
-        reason: d.reason,
-        taskId: d.taskId,
-        at:     d.at
-    });
-});
-
-    this.ws.on('message', (d) => {
-        const myId = this.api.getUser()?._id;
-        if (myId && d.userId === myId) return;
-        this.pushNotification({ type: 'message', from: d.username, text: d.message });
-    });
-
-    this.ws.on('messageHistory', (messages) => {
-        if (!messages?.length) return;
-        console.log(chalk.dim('\n  ─── Room History ───────────────────────────────'));
-        messages.forEach(msg => {
-            const from    = msg.name || msg.username || msg.sender?.name || 'Unknown';
-            const text    = msg.message || msg.content || msg.text || '';
-            const ts      = msg.timestamp || msg.createdAt;
-            const timeStr = ts ? chalk.dim(`[${new Date(ts).toLocaleTimeString()}]`) : '';
-            console.log(`  ${timeStr} ${chalk.cyan(from + ':')} ${chalk.white(text)}`);
-        });
-        console.log(chalk.dim('  ────────────────────────────────────────────────\n'));
-    });
-
-    this.ws.on('userJoined', (d) => this.pushNotification({ type: 'userJoined', username: d.username }));
-    this.ws.on('userLeft',   (d) => this.pushNotification({ type: 'userLeft',   username: d.username }));
-
-    // room join/leave events
-    this.ws.on('joined', (roomId) => this.api.logEvent('room_join',  roomId));
-    this.ws.on('left',   (roomId) => this.api.logEvent('room_leave', roomId));
-
-    this.ws.on('notification', (d) => {
-        this.pushNotification({
-            type:       'notification',
-            level:      d.type,
-            title:      d.title,
-            message:    d.message,
-            taskTitle:  d.taskTitle,
-            assignedBy: d.assignedBy,
-        });
-    });
-
-    this.ws.on('error', (e) => {
-        console.log(chalk.red(`⚠️  WebSocket error: ${e.message}`));
-        this.pushNotification({ type: 'notification', level: 'error', title: 'WebSocket Error', message: e.message });
-    });
-}
 
     // ─── Start ────────────────────────────────────────────────────────────────
 
@@ -369,7 +381,7 @@ setupWebSocketHandlers() {
 
         // If no .tncproject but autoConnect is set, connect WS anyway
         if (!booted && this.config.websocket.autoConnect) {
-            await this.ws.connect().catch(() => {});
+            await this.ws.connect().catch(() => { });
         }
 
         const { input } = require('@inquirer/prompts');
@@ -414,7 +426,7 @@ setupWebSocketHandlers() {
         try {
             result = await this.api._request('POST', '/config/verify-config', {
                 fileBase64: cfg.fileBase64,
-                roomId:     cfg.roomId,
+                roomId: cfg.roomId,
             });
         } catch (err) {
             console.log(chalk.red(`❌ tncproject auth failed: ${err.message}`));
@@ -426,10 +438,10 @@ setupWebSocketHandlers() {
         this.api._saveSession({
             token: result.shellToken,
             user: {
-                _id:      result._id.toString(),
-                userId:   result._id.toString(),
-                email:    result.email,
-                name:     result.name,
+                _id: result._id.toString(),
+                userId: result._id.toString(),
+                email: result.email,
+                name: result.name,
                 userType: 'User',
             },
             timestamp: new Date().toISOString(),
@@ -458,44 +470,44 @@ setupWebSocketHandlers() {
         return true;
     }
 
-async execute(input) {
-    if (!input.trim()) return;
+    async execute(input) {
+        if (!input.trim()) return;
 
-    const args    = this.parseCommand(input);
-    const cmdName = args[0].toLowerCase();
-    const cmdArgs = args.slice(1);
+        const args = this.parseCommand(input);
+        const cmdName = args[0].toLowerCase();
+        const cmdArgs = args.slice(1);
 
-    // Skip sensitive commands
-    const skipLog = ['login', 'logout', 'set', 'unset'];
-    if (!skipLog.includes(cmdName)) {
-        await this.api.logEvent('command', null, { cmd: cmdName });
-    }
+        // Skip sensitive commands
+        const skipLog = ['login', 'logout', 'set', 'unset'];
+        if (!skipLog.includes(cmdName)) {
+            await this.api.logEvent('command', null, { cmd: cmdName });
+        }
 
-    if (this.commands.has(cmdName)) {
-        try { await this.commands.get(cmdName).handler(cmdArgs, this); }
-        catch (err) { console.log(chalk.red(`Error: ${err.message}`)); }
-        process.stdout.write('\r\n');
-        return;
-    }
-
-    if (this.commandRegistry) {
-        const handled = await this.commandRegistry.execute(input, this);
-        if (handled) {
+        if (this.commands.has(cmdName)) {
+            try { await this.commands.get(cmdName).handler(cmdArgs, this); }
+            catch (err) { console.log(chalk.red(`Error: ${err.message}`)); }
             process.stdout.write('\r\n');
             return;
         }
-    }
 
-    const blockedOnWindows = ['open', 'which', 'grep', 'touch', 'cat'];
-    if (process.platform === 'win32' && blockedOnWindows.includes(cmdName)) {
-        console.log(chalk.red(`'${cmdName}' is not a thinknsh command.`));
-        console.log(chalk.dim(`  Type 'help' to see available commands.`));
-        process.stdout.write('\r\n');
-        return;
-    }
+        if (this.commandRegistry) {
+            const handled = await this.commandRegistry.execute(input, this);
+            if (handled) {
+                process.stdout.write('\r\n');
+                return;
+            }
+        }
 
-    await this.executeSystemCommand(input);
-}
+        const blockedOnWindows = ['open', 'which', 'grep', 'touch', 'cat'];
+        if (process.platform === 'win32' && blockedOnWindows.includes(cmdName)) {
+            console.log(chalk.red(`'${cmdName}' is not a thinknsh command.`));
+            console.log(chalk.dim(`  Type 'help' to see available commands.`));
+            process.stdout.write('\r\n');
+            return;
+        }
+
+        await this.executeSystemCommand(input);
+    }
     // ─── Prompt ───────────────────────────────────────────────────────────────
 
     getPromptText() {
@@ -505,7 +517,7 @@ async execute(input) {
         if (this.ws.isConnected?.()) p += '● ';
 
         let displayPath = this.currentDir;
-        const homeDir   = os.homedir();
+        const homeDir = os.homedir();
 
         if (process.platform === 'win32') {
             if (displayPath.toLowerCase() === homeDir.toLowerCase()) displayPath = '~';
@@ -519,7 +531,7 @@ async execute(input) {
         return `${this.username}@thinknsh:${displayPath} $`;
     }
 
-    getPrompt()       { return this.getPromptText(); }
+    getPrompt() { return this.getPromptText(); }
     printMessage(msg) { console.log(msg); }
 
     // ─── Built-ins ────────────────────────────────────────────────────────────
@@ -527,28 +539,28 @@ async execute(input) {
     registerBuiltinCommands() {
         const r = (name, handler, desc) => this.commands.set(name, { handler, description: desc });
 
-        r('help',       this.helpCommand.bind(this),      'Show available commands');
-        r('exit',       () => { this.cleanup(); process.exit(0); }, 'Exit the shell');
-        r('quit',       () => { this.cleanup(); process.exit(0); }, 'Exit the shell');
-        r('clear',      () => console.clear(),            'Clear screen');
-        r('history',    this.historyCommand.bind(this),   'Show command history');
-        r('cd',         this.cdCommand.bind(this),        'Change directory');
-        r('pwd',        () => console.log(process.cwd()), 'Print working directory');
-        r('ls',         this.lsCommand.bind(this),        'List files');
-        r('connect',    this.connectCommand.bind(this),   'Connect to WebSocket');
-        r('disconnect', () => this.ws.disconnect(),       'Disconnect WebSocket');
-        r('status',     this.statusCommand.bind(this),    'Show connection status');
-        r('join',       this.joinCommand.bind(this),      'Join a room');
-        r('leave',      () => this.ws.leaveRoom?.(),      'Leave current room');
-        r('rooms',      this.roomsCommand.bind(this),     'List rooms');
-        r('say',        this.sayCommand.bind(this),       'Send a message');
-        r('msg',        this.sayCommand.bind(this),       'Send a message');
-        r('set',        this.setCommand.bind(this),       'Set a variable');
-        r('unset',      this.unsetCommand.bind(this),     'Unset a variable');
+        r('help', this.helpCommand.bind(this), 'Show available commands');
+        r('exit', () => { this.cleanup(); process.exit(0); }, 'Exit the shell');
+        r('quit', () => { this.cleanup(); process.exit(0); }, 'Exit the shell');
+        r('clear', () => console.clear(), 'Clear screen');
+        r('history', this.historyCommand.bind(this), 'Show command history');
+        r('cd', this.cdCommand.bind(this), 'Change directory');
+        r('pwd', () => console.log(process.cwd()), 'Print working directory');
+        r('ls', this.lsCommand.bind(this), 'List files');
+        r('connect', this.connectCommand.bind(this), 'Connect to WebSocket');
+        r('disconnect', () => this.ws.disconnect(), 'Disconnect WebSocket');
+        r('status', this.statusCommand.bind(this), 'Show connection status');
+        r('join', this.joinCommand.bind(this), 'Join a room');
+        r('leave', () => this.ws.leaveRoom?.(), 'Leave current room');
+        r('rooms', this.roomsCommand.bind(this), 'List rooms');
+        r('say', this.sayCommand.bind(this), 'Send a message');
+        r('msg', this.sayCommand.bind(this), 'Send a message');
+        r('set', this.setCommand.bind(this), 'Set a variable');
+        r('unset', this.unsetCommand.bind(this), 'Unset a variable');
 
-        this.addAlias('ll',  'ls -la');
-        this.addAlias('..',  'cd ..');
-        this.addAlias('~',   'cd ~');
+        this.addAlias('ll', 'ls -la');
+        this.addAlias('..', 'cd ..');
+        this.addAlias('~', 'cd ~');
     }
 
     registerCommand(name, handler, description = '') { this.commands.set(name, { handler, description }); }
@@ -567,7 +579,7 @@ async execute(input) {
         const target = args.join(' ').trim() || os.homedir();
         try {
             let newPath;
-            if (target === '~')   newPath = os.homedir();
+            if (target === '~') newPath = os.homedir();
             else if (target === '..') newPath = path.dirname(this.currentDir);
             else newPath = path.resolve(this.currentDir, target);
             newPath = path.normalize(newPath);
@@ -581,8 +593,8 @@ async execute(input) {
 
     async lsCommand(args) {
         try {
-            const files    = await fs.readdir(this.currentDir);
-            const showAll  = args.includes('-a');
+            const files = await fs.readdir(this.currentDir);
+            const showAll = args.includes('-a');
             const filtered = showAll ? files : files.filter(f => !f.startsWith('.'));
             const fileList = await Promise.all(filtered.map(async (file) => {
                 const stat = await fs.stat(path.join(this.currentDir, file));
@@ -671,13 +683,13 @@ async execute(input) {
     executeSystemCommand(command) {
         return new Promise((resolve) => {
             const child = spawn(command, [], {
-                cwd:   this.currentDir,
+                cwd: this.currentDir,
                 shell: true,
                 stdio: 'inherit'
             });
             child.on('close', (code) => {
                 // Update currentDir in case command changed it (cd won't but others might)  http://localhost:3001
-                try { this.currentDir = process.cwd(); } catch {}
+                try { this.currentDir = process.cwd(); } catch { }
                 process.stdout.write('\r\n');
                 resolve();
             });
@@ -689,7 +701,7 @@ async execute(input) {
     }
 
     showWelcome() {
-        try { const figlet = require('figlet'); console.log(chalk.cyan(figlet.textSync('ThinkNCollab', { font: 'Standard' }))); } catch {}
+        try { const figlet = require('figlet'); console.log(chalk.cyan(figlet.textSync('ThinkNCollab', { font: 'Standard' }))); } catch { }
         console.log(chalk.cyan(`
 ╔══════════════════════════════════════════════════════╗
 ║     ThinkNCollab Shell v0.0.10                       ║
@@ -701,19 +713,19 @@ async execute(input) {
         try {
             if (fs.existsSync(this.config.historyFile))
                 this.history = fs.readFileSync(this.config.historyFile, 'utf8').split('\n').filter(l => l.trim());
-        } catch {}
+        } catch { }
     }
 
     saveHistory() {
-        try { fs.writeFileSync(this.config.historyFile, this.history.slice(-this.config.maxHistory).join('\n')); } catch {}
+        try { fs.writeFileSync(this.config.historyFile, this.history.slice(-this.config.maxHistory).join('\n')); } catch { }
     }
 
-cleanup() {
-    this.api.logout();  // session end + heartbeat stop + lastSeen update
-    if (this.tcpServer) { try { this.tcpServer.close(); } catch {} }
-    if (this.ws) this.ws.disconnect();
-    this.saveHistory();
-}
+    cleanup() {
+        this.api.logout();  // session end + heartbeat stop + lastSeen update
+        if (this.tcpServer) { try { this.tcpServer.close(); } catch { } }
+        if (this.ws) this.ws.disconnect();
+        this.saveHistory();
+    }
 }
 
 module.exports = ThinkNCollabShell;

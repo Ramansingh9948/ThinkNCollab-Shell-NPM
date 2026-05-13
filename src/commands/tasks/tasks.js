@@ -106,9 +106,10 @@ module.exports = {
                 const col      = task.column ? chalk.dim(` [${task.column}]`) : '';
 
                 console.log(`\n${num} ${status} ${title}`);
-                console.log(subline('id', task._id) +
-                    `  ${chalk.dim('priority:')} ${pc(task.priority)}` +
-                    due + myStatus + col);
+
+console.log(subline('id', `${task.taskID ? '#' + task.taskID : task._id}`) +
+    `  ${chalk.dim('priority:')} ${pc(task.priority)}` +
+    due + myStatus + col);
 
                 if (task.description) {
                     const desc = task.description.length > 90
