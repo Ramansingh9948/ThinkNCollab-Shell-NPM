@@ -21,6 +21,7 @@ A real-time collaborative terminal shell with WebSocket integration, built on to
   - [Terminal Share Commands](#terminal-share-commands)
   - [Notification Commands](#notification-commands)
   - [Shell Commands](#shell-commands)
+  - [GitHub Integration Commands](#github-integration-commands)
 - [`.tncproject` Auto-Boot](#tncproject-auto-boot)
 - [Notification Window](#notification-window)
 - [Built-in Shell Features](#built-in-shell-features)
@@ -408,6 +409,37 @@ Manually connect or disconnect the WebSocket.
 
 #### `exit` / `quit`
 Exit the shell gracefully (saves history, closes TCP notification server, disconnects WebSocket).
+
+---
+
+### GitHub Integration Commands
+
+These commands let you interact with the GitHub repository linked to your current room. Requires connecting your GitHub account and repository on the Web Dashboard first.
+
+#### `statusgh`
+Show GitHub connection status and linked repository details.
+* **Aliases:** `statusgt`, `gh-status`
+* **Example:** `statusgh`
+
+#### `issues`
+List open issues in the linked GitHub repository.
+* **Aliases:** `gh-issues`
+* **Example:** `issues`
+
+#### `pulls`
+List open pull requests in the linked GitHub repository.
+* **Aliases:** `prs`, `gh-pulls`, `gh-prs`
+* **Example:** `pulls`
+
+#### `commits`
+List the last 15 commits in the linked GitHub repository.
+* **Aliases:** `gh-commits`
+* **Example:** `commits`
+
+#### `issue-create <title> <body>`
+Create a new issue in the linked GitHub repository. If arguments are missing, the shell prompts for them interactively.
+* **Aliases:** `create-issue`, `gh-issue-create`, `gh-create-issue`
+* **Example:** `issue-create "API Timeout" "GET /thinknsh is failing under load"`
 
 ---
 

@@ -347,12 +347,13 @@ class ThinkNCollabShell extends EventEmitter {
 
         this.ws.on('notification', (d) => {
             this.pushNotification({
-                type: 'notification',
-                level: d.type,
+                type: d.type || 'notification',
+                level: d.level,
                 title: d.title,
                 message: d.message,
                 taskTitle: d.taskTitle,
                 assignedBy: d.assignedBy,
+                meta: d.meta,
             });
         });
 
@@ -427,6 +428,7 @@ class ThinkNCollabShell extends EventEmitter {
             result = await this.api._request('POST', '/config/verify-config', {
                 fileBase64: cfg.fileBase64,
                 roomId: cfg.roomId,
+                machineId:  os.hostname(),
             });
         } catch (err) {
             console.log(chalk.red(`❌ tncproject auth failed: ${err.message}`));
@@ -437,6 +439,7 @@ class ThinkNCollabShell extends EventEmitter {
         // Save session exactly like manual login
         this.api._saveSession({
             token: result.shellToken,
+            shellSessionId: result.shellSessionId || null,
             user: {
                 _id: result._id.toString(),
                 userId: result._id.toString(),
@@ -603,7 +606,7 @@ class ThinkNCollabShell extends EventEmitter {
             fileList.forEach(f => f.isDir ? console.log(chalk.blue(f.name + '/')) : console.log(f.name));
         } catch (err) { console.log(chalk.red(`ls: ${err.message}`)); }
     }
-
+//  tncproject auth failed: Could not read .tncproject — re-download it from the dashboard
     async connectCommand() {
         console.log(chalk.cyan('🔌 Connecting...'));
         try { await this.ws.connect(); }

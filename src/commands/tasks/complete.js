@@ -2,6 +2,8 @@
 
 const chalk  = require('chalk');
 const crypto = require('crypto');
+const cp     = require('child_process');
+const path   = require('path');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,7 +48,6 @@ function parseCookieHeader(raw, base) {
   return cookies;
 }
 
-// Extract CSRF token from HTML — tries common patterns
 function extractCsrf(html, customSelector) {
   if (customSelector) {
     const nameMatch = customSelector.match(/name=['"]([^'"]+)['"]/);
@@ -60,10 +61,10 @@ function extractCsrf(html, customSelector) {
   }
 
   const patterns = [
-    { field: '_csrf',                        re: /name=["']_csrf["'][^>]*value=["']([^"']+)["']/ },
-    { field: '_token',                       re: /name=["']_token["'][^>]*value=["']([^"']+)["']/ },
-    { field: 'authenticity_token',           re: /name=["']authenticity_token["'][^>]*value=["']([^"']+)["']/ },
-    { field: '__RequestVerificationToken',   re: /name=["']__RequestVerificationToken["'][^>]*value=["']([^"']+)["']/ },
+    { field: '_csrf',                      re: /name=["']_csrf["'][^>]*value=["']([^"']+)["']/ },
+    { field: '_token',                     re: /name=["']_token["'][^>]*value=["']([^"']+)["']/ },
+    { field: 'authenticity_token',         re: /name=["']authenticity_token["'][^>]*value=["']([^"']+)["']/ },
+    { field: '__RequestVerificationToken', re: /name=["']__RequestVerificationToken["'][^>]*value=["']([^"']+)["']/ },
   ];
 
   for (const { field, re } of patterns) {
@@ -132,7 +133,6 @@ async function authViaRequest(context, base, email, password, authConfig) {
     );
   }
 
-  // 4. Inject into Playwright context
   const parsed = parseCookieHeader(finalCookies, base);
   if (!parsed.length) throw new Error('Could not parse session cookies from response');
 
@@ -140,7 +140,6 @@ async function authViaRequest(context, base, email, password, authConfig) {
   console.log(chalk.dim(`  → Cookies injected: ${parsed.map(c => c.name).join(', ')}`));
 }
 
-// ─── Strategy: form ───────────────────────────────────────────────────────────
 async function authViaForm(page, base, email, password, authConfig) {
   const signinPath = authConfig.signinUrl || '/signin';
   await page.goto(base + signinPath, { waitUntil: 'networkidle', timeout: 15000 });
@@ -148,7 +147,6 @@ async function authViaForm(page, base, email, password, authConfig) {
 
   if (!page.url().includes(signinPath.replace(/^\//, ''))) return;
 
-  // Force all hidden form elements visible (step-by-step forms etc.)
   await page.evaluate(() => {
     document.querySelectorAll('form input, form button, form > div, form > section').forEach(el => {
       el.style.display    = '';
@@ -178,7 +176,6 @@ async function authViaForm(page, base, email, password, authConfig) {
 
   await page.locator(emailSel).first().fill(email);
   console.log(chalk.dim(`  → Email filled`));
-
   await page.locator(passSel).first().fill(password);
   console.log(chalk.dim(`  → Password filled`));
 
@@ -313,7 +310,7 @@ async function runHttpTest(testConfig, testUser, authConfig = {}) {
 }
 
 // ─── Browser Test ─────────────────────────────────────────────────────────────
-async function runBrowserTest(testConfig, testUser) {
+async function runBrowserTest(testConfig, testUser, boardAuth = {}) { 
   let playwright;
   try {
     playwright = require('playwright');
@@ -381,52 +378,174 @@ async function runBrowserTest(testConfig, testUser) {
     }
 
     return { url: currentUrl, elementExists, elementText, bodyText };
-
   } finally {
     await browser.close();
   }
 }
 
+// Helper to run a local command and capture exitCode & stdout/stderr
+function runLocalCommand(command) {
+  return new Promise((resolve) => {
+    cp.exec(command, (error, stdout, stderr) => {
+      const exitCode = error ? (error.code || 1) : 0;
+      resolve({
+        exitCode,
+        stdout: stdout.toString(),
+        stderr: stderr.toString()
+      });
+    });
+  });
+}
+
 // ─── Local Judge ──────────────────────────────────────────────────────────────
 function judgeLocally(testConfig, result) {
-  const { type, expect } = testConfig;
+  const { type, value, condition, expect } = testConfig;
   const failures = [];
 
-  if (type === 'http') {
-    if (expect?.status !== undefined && result.status !== expect.status)
-      failures.push(`Status: expected ${expect.status}, got ${result.status}`);
+  try {
+    switch (type) {
+      case 'exitCode': {
+        const passed = result.exitCode === value;
+        return {
+          passed,
+          reason: passed
+            ? `Exit code matched: ${value}`
+            : `Expected exit code ${value}, got ${result.exitCode}`
+        };
+      }
 
-    if (expect?.body) {
-      for (const [key, condition] of Object.entries(expect.body)) {
-        const actual = getNestedValue(result.body, key);
-        if      (condition?.exists && (actual === undefined || actual === null))
-          failures.push(`body.${key}: expected to exist`);
-        else if (condition?.eq !== undefined && actual !== condition.eq)
-          failures.push(`body.${key}: expected "${condition.eq}", got "${actual}"`);
-        else if (condition?.contains !== undefined && !String(actual).includes(String(condition.contains)))
-          failures.push(`body.${key}: expected to contain "${condition.contains}"`);
+      case 'stdout': {
+        const actualOut = (result.stdout || '').trim();
+        const expectedOut = (value || '').trim();
+        const passed = actualOut === expectedOut;
+        return {
+          passed,
+          reason: passed ? `Output matched` : `Output mismatch`,
+          diff: passed ? undefined : { expected: expectedOut, actual: actualOut }
+        };
+      }
+
+      case 'regex': {
+        const pattern = new RegExp(value);
+        const target = result.stdout || result.output || '';
+        const passed = pattern.test(target);
+        return {
+          passed,
+          reason: passed ? `Regex matched: ${value}` : `Regex did not match: ${value}`
+        };
+      }
+
+      case 'http': {
+        if (expect?.status !== undefined && result.status !== expect.status) {
+          failures.push(`Status: expected ${expect.status}, got ${result.status}`);
+        }
+        if (expect?.body) {
+          for (const [key, condition] of Object.entries(expect.body)) {
+            const actualVal = getNestedValue(result.body || {}, key);
+            if (condition?.exists) {
+              if (actualVal === undefined || actualVal === null)
+                failures.push(`body.${key}: expected to exist`);
+            } else if (condition?.eq !== undefined) {
+              if (actualVal !== condition.eq)
+                failures.push(`body.${key}: expected "${condition.eq}", got "${actualVal}"`);
+            } else if (condition?.contains !== undefined) {
+              if (!String(actualVal).includes(String(condition.contains)))
+                failures.push(`body.${key}: expected to contain "${condition.contains}"`);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'json': {
+        const actualData = result.output || result.json || {};
+        if (condition) {
+          return judgeWithConditions(condition, actualData);
+        } else {
+          const passed = JSON.stringify(value) === JSON.stringify(actualData);
+          return {
+            passed,
+            reason: passed ? `JSON matched` : `JSON mismatch`,
+            diff: passed ? undefined : { expected: value, actual: actualData }
+          };
+        }
+      }
+      case 'loadtest':
+      case 'geekload': {
+        const actualData = result.output || result.json || {};
+        const cond = condition || expect?.condition || expect || {};
+        return judgeWithConditions(cond, actualData);
+      }
+
+      case 'browser': {
+        if (expect?.element && !result.elementExists) {
+          failures.push(`Element "${expect.element}" not found on page`);
+        }
+        if (expect?.text && result.elementText) {
+          if (!result.elementText.includes(expect.text))
+            failures.push(`Element text: expected to contain "${expect.text}", got "${result.elementText}"`);
+        }
+        if (expect?.redirectUrl) {
+          try {
+            const actualPath = new URL(result.url).pathname;
+            if (!actualPath.includes(expect.redirectUrl))
+              failures.push(`URL: expected "${expect.redirectUrl}", got "${actualPath}"`);
+          } catch {
+            failures.push(`Invalid URL in result: "${result.url}"`);
+          }
+        }
+        break;
+      }
+
+      default:
+        return { passed: false, reason: `Unknown test type: ${type}` };
+    }
+
+    return {
+      passed: failures.length === 0,
+      reason: failures.length === 0 ? 'All checks passed' : failures.join(' | '),
+      failures,
+    };
+  } catch (err) {
+    return { passed: false, reason: `Judge error: ${err.message}` };
+  }
+}
+
+function judgeWithConditions(conditions, actual) {
+  const failures = [];
+
+  for (const [key, ops] of Object.entries(conditions)) {
+    const actualVal = actual[key];
+
+    if (actualVal === undefined) {
+      failures.push(`Missing key: "${key}"`);
+      continue;
+    }
+
+    for (const [op, expected] of Object.entries(ops)) {
+      let pass = false;
+      switch (op) {
+        case 'gte':     pass = actualVal >= expected; break;
+        case 'lte':     pass = actualVal <= expected; break;
+        case 'gt':      pass = actualVal > expected;  break;
+        case 'lt':      pass = actualVal < expected;  break;
+        case 'eq':      pass = actualVal === expected; break;
+        case 'contains': pass = String(actualVal).includes(String(expected)); break;
+        case 'regex':   pass = new RegExp(expected).test(String(actualVal)); break;
+        default:        pass = false;
+      }
+      if (!pass) {
+        failures.push(`"${key}" failed: ${actualVal} ${op} ${expected}`);
       }
     }
   }
 
-  if (type === 'browser') {
-    if (expect?.element && !result.elementExists)
-      failures.push(`Element "${expect.element}" not found on page`);
-
-    if (expect?.text && result.elementText && !result.elementText.includes(expect.text))
-      failures.push(`Element text: expected "${expect.text}", got "${result.elementText}"`);
-
-    if (expect?.redirectUrl) {
-      const actualPath = new URL(result.url).pathname;
-      if (!actualPath.includes(expect.redirectUrl))
-        failures.push(`URL: expected "${expect.redirectUrl}", got "${actualPath}"`);
-    }
-  }
-
   return {
-    passed:  failures.length === 0,
-    reason:  failures.length === 0 ? 'All checks passed' : failures.join(' | '),
-    failures,
+    passed: failures.length === 0,
+    reason: failures.length === 0
+      ? `All conditions passed`
+      : `Failed conditions: ${failures.join('; ')}`,
+    diff: failures.length > 0 ? { conditions, actual } : undefined
   };
 }
 
@@ -492,13 +611,13 @@ module.exports = {
 
     const testUser = (task.testuserEmail && task.testuserPassword)
       ? { email: task.testuserEmail, password: task.testuserPassword }
-      : null;
+        : null;
 
       const boardAuth = {
-  strategy:     task.testauthStrategy  || 'request',
-  signinUrl:    task.testauthSigninUrl || '/signin',
-  csrfSelector: task.testauthCsrf     || null,
-};
+      strategy:     task.testauthStrategy  || 'request',
+      signinUrl:    task.testauthSigninUrl || '/signin',
+      csrfSelector: task.testauthCsrf     || null,
+    };
 
     // ── Print summary ─────────────────────────────────────────────────────────
     console.log(chalk.cyan(`\n  ── Submitting: "${title}" ──────────────────────`));
@@ -510,7 +629,7 @@ const authConfig = { ...boardAuth, ...(testConfig.auth || {}) };
       const strategy = testConfig.auth?.strategy || (testUser ? 'request' : 'skip');
       console.log(chalk.dim(`  Target   : ${testConfig.url}`));
       console.log(chalk.dim(`  Auth     : ${strategy}`));
-      if (testUser) console.log(chalk.dim(`  TestUser : ${testUser.email}`));
+    if (testUser) console.log(chalk.dim(`  TestUser : ${testUser.email}`));
       else          console.log(chalk.yellow(`  ⚠️  No testUser — auth will be skipped`));
     }
     console.log(chalk.dim(`  Running virtual user...\n`));
@@ -530,6 +649,74 @@ const authConfig = { ...boardAuth, ...(testConfig.auth || {}) };
         console.log(chalk.dim(`  → Element: ${result.elementExists ? 'found ✓' : 'not found ✗'}`));
         if (result.elementText)
           console.log(chalk.dim(`  → Text   : "${result.elementText.trim().slice(0, 60)}"`));
+
+      } else if (testConfig.type === 'exitCode' || testConfig.type === 'stdout' || testConfig.type === 'regex') {
+        const cmd = testConfig.command || testConfig.script;
+        if (!cmd) {
+          throw new Error(`testConfig type "${testConfig.type}" requires a "command" or "script" to execute.`);
+        }
+        console.log(chalk.dim(`  → Executing local command: "${cmd}"`));
+        const runRes = await runLocalCommand(cmd);
+        result = {
+          exitCode: runRes.exitCode,
+          stdout: runRes.stdout,
+          stderr: runRes.stderr
+        };
+        console.log(chalk.dim(`  → Exit Code: ${result.exitCode}`));
+        if (result.stdout) console.log(chalk.dim(`  → Stdout   : ${result.stdout.trim().slice(0, 80)}`));
+
+      } else if (testConfig.type === 'json') {
+        const cmd = testConfig.command || testConfig.script;
+        if (cmd) {
+          console.log(chalk.dim(`  → Executing local command: "${cmd}"`));
+          const runRes = await runLocalCommand(cmd);
+          let parsedJson = {};
+          try {
+            parsedJson = JSON.parse(runRes.stdout.trim());
+          } catch (e) {
+            throw new Error(`Command executed but stdout was not valid JSON: ${runRes.stdout}`);
+          }
+          result = {
+            exitCode: runRes.exitCode,
+            stdout: runRes.stdout,
+            stderr: runRes.stderr,
+            json: parsedJson,
+            output: parsedJson
+          };
+        } else {
+          throw new Error('testConfig type "json" requires a "command" or "script" to output JSON.');
+        }
+
+      } else if (testConfig.type === 'loadtest' || testConfig.type === 'geekload') {
+        const script = testConfig.script || testConfig.command;
+        if (!script) {
+          throw new Error(`testConfig type "${testConfig.type}" requires a "script" or "command" specifying the load test script path.`);
+        }
+        const scriptPath = path.resolve(process.cwd(), script);
+        console.log(chalk.dim(`  → Running GeekLoad test script: ${script}`));
+        const { runLoadTest } = require('../../core/geekload');
+        const loadtestResult = await runLoadTest(scriptPath);
+
+        const Table = require('cli-table3');
+        const table = new Table({
+          head: [chalk.cyan('Metric'), chalk.cyan('Value')],
+          colWidths: [25, 20]
+        });
+        table.push(
+          ['Virtual Users', loadtestResult.virtual_users],
+          ['Duration (sec)', loadtestResult.duration_sec],
+          ['Total Requests', loadtestResult.total_requests],
+          ['Failed Requests', loadtestResult.failed_requests],
+          ['Failure Rate', `${(loadtestResult.failure_rate * 100).toFixed(2)}%`],
+          ['p95 Latency (ms)', loadtestResult.p95_latency_ms]
+        );
+        console.log('\n' + table.toString() + '\n');
+
+        result = {
+          exitCode: loadtestResult.failed_requests > 0 ? 1 : 0,
+          output: loadtestResult,
+          json: loadtestResult
+        };
 
       } else {
         console.log(chalk.red(`❌ Unsupported test type: ${testConfig.type}`));

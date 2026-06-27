@@ -1,6 +1,6 @@
 /*
   src/commands/tasks/task-info.js — View task details + testConfig + webhook URL
-  Usage: task-info <taskId>  OR  info <taskId>
+  Usage: task-info <taskId>  OR  info <taskId> load
 */
 const chalk = require('chalk');
 
@@ -53,6 +53,13 @@ console.log(`  ${chalk.dim('id      ')}  ${chalk.dim(task._id)}${task.taskID ? c
     if (task.description) {
       console.log(chalk.dim('\n  description:'));
       task.description.split('\n').forEach(l => console.log(`    ${chalk.white(l)}`));
+    }
+
+    if (task.referenceLinks && task.referenceLinks.length > 0) {
+      console.log(chalk.cyan('\n  ─── Supported Links ─────────────────────────────'));
+      task.referenceLinks.forEach(link => {
+        console.log(`  ${chalk.dim(link.title.padEnd(12))}  ${chalk.blue(link.url)}`);
+      });
     }
 
     // ── Assignees ─────────────────────────────────────────────────────────────

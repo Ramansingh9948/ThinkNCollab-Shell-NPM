@@ -63,7 +63,7 @@ async function cmdStart(shell) {
             console.log(chalk.green(`\n✅ Terminal sharing started`));
             console.log(chalk.dim(`   Session : ${data.sessionId}`));
             console.log(chalk.dim(`   Room    : ${roomId}`));
-            console.log(chalk.dim(`   URL     : /terminal/${data.sessionId}`));
+            console.log(chalk.dim(`   URL     : https://thinkncollab.com/terminal/${data.sessionId}`));
             console.log(chalk.dim(`\n   Room members can now view your terminal.`));
             console.log(chalk.dim(`   Use "share grant <userId>" to give write access.\n`));
 

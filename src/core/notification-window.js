@@ -36,16 +36,32 @@ function printNotification(data) {
     const ts        = chalk.dim(`[${timestamp}]`);
 
     switch (data.type) {
+        case 'task':
+            beep();
+            console.log(`${ts} 📋 ${chalk.yellow('Task Assigned →')} ${chalk.white(data.message)}`);
+            break;
+        case 'task_reopened':
+            beep();
+            console.log(`${ts} 🔄 ${chalk.yellow('Task Reopened →')} ${chalk.white(data.message.replace(/^🔄\s*/, ''))}`);
+            break;
+        case 'task_completed':
+            beep();
+            if (data.message) {
+                console.log(`${ts} 🎉 ${chalk.green('Task Completed →')} ${chalk.white(data.message.replace(/^🎉\s*/, ''))}`);
+            } else {
+                console.log(`${ts} ✅ ${chalk.green(data.userName || 'Someone')} completed ${chalk.white(data.taskTitle)}`);
+            }
+            break;
+        case 'task_progress':
+            beep();
+            console.log(`${ts} ⏳ ${chalk.blue('Task Progress →')} ${chalk.white(data.message)}`);
+            break;
         case 'task_assigned':
             beep();
             console.log(`${ts} 📋 ${chalk.yellow('Task assigned →')} ${chalk.white(data.taskTitle)} ${chalk.dim('by')} ${chalk.cyan(data.assignedBy)}`);
             break;
         case 'task_started':
             console.log(`${ts} ⚡ ${chalk.green(data.userName)} started working on ${chalk.white(data.taskTitle)}`);
-            break;
-        case 'task_completed':
-            beep();
-            console.log(`${ts} ✅ ${chalk.green(data.userName)} completed ${chalk.white(data.taskTitle)}`);
             break;
         case 'message':
             beep();
@@ -78,7 +94,11 @@ function printNotification(data) {
             process.stdout.write('\r' + ' '.repeat(40) + '\r');
             break;
         default:
-            console.log(`${ts} ${chalk.white(JSON.stringify(data))}`);
+            if (data.message) {
+                console.log(`${ts} 📢 ${chalk.white(data.message)}`);
+            } else {
+                console.log(`${ts} ${chalk.white(JSON.stringify(data))}`);
+            }
     }
 }
 

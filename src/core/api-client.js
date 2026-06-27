@@ -148,7 +148,7 @@ async logEvent(type, roomId = null, meta = {}) {
     if (!sessionId) return;
     await this._request('POST', '/thinknsh/session/event', {
         sessionId, type, roomId, meta
-    }).catch(() => {}); // silently fail — never block shell
+    }).catch(() => {}); 
 }
 
 // ─── Heartbeat — keeps lastSeenAt fresh while shell is open ──────────────

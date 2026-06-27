@@ -56,14 +56,18 @@ const load = (path, category) => {
         load('./tasks/complete',    'tasks');
         // load('./tasks/comment',     'tasks');
         load('./tasks/create-task', 'tasks');
+        load('./tasks/loadtest',    'tasks');
         
 
         // Terminal
         load('./terminal/share', 'terminal');
 
-
-
-
+        // GitHub
+        load('./github/statusgh', 'github');
+        load('./github/issues', 'github');
+        load('./github/pulls', 'github');
+        load('./github/commits', 'github');
+        load('./github/issue-create', 'github');
 
     }
 
@@ -85,30 +89,30 @@ const load = (path, category) => {
         return this.commands.get(name);
     }
 
-    async execute(input, shell) {
-        const args    = shell.parseCommand(input);
-        const cmdName = args[0].toLowerCase();
-        const cmdArgs = args.slice(1);
+async execute(input, shell) {
+  const args    = shell.parseCommand(input);
+  const cmdName = args[0].toLowerCase();
+  const cmdArgs = args.slice(1);
+  const command = this.getCommand(cmdName);
+  if (!command) return false;
 
-        const command = this.getCommand(cmdName);
-        if (!command) return false;
-
-        try {
-            if (command.requiresAuth && !shell.api?.isAuthenticated()) {
-                console.log(chalk.red('❌ Please login first: login'));
-                return true;
-            }
-            if (command.requiresRoom && !shell.ws?.getCurrentRoom()) {
-                console.log(chalk.red('❌ Please join a room first: join <room-id>'));
-                return true;
-            }
-            await command.execute(cmdArgs, shell);
-        } catch (error) {
-            console.log(chalk.red(`❌ Command error: ${error.message}`));
-        }
-
-        return true;
+  try {
+    if (command.requiresAuth && !shell.api?.isAuthenticated()) {
+      console.log(chalk.red('❌ Please login first: login'));
+      return true;
     }
+    if (command.requiresRoom && !shell.ws?.getCurrentRoom()) {
+      console.log(chalk.red('❌ Please join a room first: join <room-id>'));
+      return true;
+    }
+
+    shell._lastCommand = cmdName; // ← backward compat
+    await command.execute(cmdArgs, shell, cmdName); // ← invokedAs as 3rd arg
+  } catch (error) {
+    console.log(chalk.red(`❌ Command error: ${error.message}`));
+  }
+  return true;
+}
 
     getHelpText() {
         let help = chalk.cyan('\n📚 Available Commands:\n');

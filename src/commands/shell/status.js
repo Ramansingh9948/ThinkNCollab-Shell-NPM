@@ -14,9 +14,9 @@ module.exports = {
     requiresAuth: false,
     
     async execute(args, shell) {
-        const user = shell.api.getUser();
-        const room = shell.api.getCurrentRoom();
-        const connected = shell.api.isConnected();
+        const user = shell.ws.getUser();
+        const room = shell.ws.getCurrentRoom();
+        const connected = shell.ws.isConnected();
         
         console.log(chalk.cyan('\n📊 ThinkNCollab Shell Status'));
         console.log(chalk.dim('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'));
@@ -25,8 +25,8 @@ module.exports = {
         console.log(`  ${chalk.yellow('Connection:')}    ${connected ? chalk.green('● Online') : chalk.red('○ Offline')}`);
         
         if (connected) {
-            console.log(`  ${chalk.yellow('Server:')}        ${shell.api.config.wsUrl}`);
-            console.log(`  ${chalk.yellow('Socket ID:')}      ${shell.api.getSocketId() || 'N/A'}`);
+            console.log(`  ${chalk.yellow('Server:')}        ${shell.ws.config.wsUrl}`);
+            console.log(`  ${chalk.yellow('Socket ID:')}      ${shell.ws.getSocketId() || 'N/A'}`);
         }
         
         // Authentication

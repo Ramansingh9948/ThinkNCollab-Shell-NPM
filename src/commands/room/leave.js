@@ -14,20 +14,11 @@ module.exports = {
     requiresRoom: true,
     
     async execute(args, shell) {
-        const room = shell.api.getCurrentRoom();
-        
-        if (!room) {
-            console.log(chalk.yellow('⚠️  Not in any room'));
-            return;
-        }
-        
-        console.log(chalk.cyan(`👋 Leaving room: ${room.name}...`));
-        
-        try {
-            await shell.api.leaveRoom();
-            console.log(chalk.green(`✅ Left room: ${room.name}`));
-        } catch (error) {
-            console.log(chalk.red(`❌ Failed to leave: ${error.message}`));
-        }
+       const room = shell.ws.getCurrentRoom();
+if (!room) { console.log(chalk.yellow('⚠️  Not in any room')); return; }
+console.log(chalk.cyan(`👋 Leaving room...`));
+await shell.ws.leaveRoom();
+console.log(chalk.green(`✅ Left room`));
+       
     }
 };
