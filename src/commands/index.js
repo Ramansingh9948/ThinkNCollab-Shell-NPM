@@ -47,6 +47,7 @@ const load = (path, category) => {
         // Shell
         load('./shell/status', 'shell');
         load('./shell/notify', 'shell');
+        load('./shell/version', 'shell');
 
         // Tasks
         load('./tasks/tasks',       'tasks');
