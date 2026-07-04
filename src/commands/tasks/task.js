@@ -140,6 +140,9 @@ console.log(`  ${chalk.dim('id      ')}  ${chalk.dim(task._id)}${task.taskID ? c
       if (tc.type === 'regex')
         console.log(`  ${chalk.dim('expect  ')}  regex ${chalk.green(tc.expect?.regex || '')}`);
 
+      if (tc.type === 'tnc-build')
+        console.log(`  ${chalk.dim('runner  ')}  ${chalk.green('Local tnc-ci.yml workflow execution')}`);
+
     } else {
       console.log(chalk.yellow('\n  ⚠️  No test config — task will need manual completion'));
       console.log(chalk.dim('   Use: complete <task-id>'));

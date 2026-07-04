@@ -22,7 +22,7 @@ A real-time collaborative terminal shell with WebSocket integration, built on to
   - [Notification Commands](#notification-commands)
   - [Shell Commands](#shell-commands)
   - [GitHub Integration Commands](#github-integration-commands)
-- [`.tncproject` Auto-Boot](#tncproject-auto-boot)
+- [`tncproject` Auto-Boot](#tncproject-auto-boot)
 - [Notification Window](#notification-window)
 - [Built-in Shell Features](#built-in-shell-features)
 - [Single-Command Mode](#single-command-mode)
@@ -38,7 +38,7 @@ A real-time collaborative terminal shell with WebSocket integration, built on to
 - 📋 **Task Management** — Accept, start, complete, and reject tasks from the CLI
 - 📺 **Terminal Sharing** — Share your live terminal session with teammates (read + write access)
 - 🔔 **Notification Window** — Background TCP-based popup window for live events
-- 🔑 **`.tncproject` Auto-Boot** — Drop a config file in your project root to auto-login and join a room on shell start
+- 🔑 **`tncproject` Auto-Boot** — Drop a config file in your project root to auto-login and join a room on shell start
 - 🛡️ **Shell Token Auth** — Secure HMAC-SHA256 token validation for shell connections
 - 📁 **File System** — Built-in `ls`, `cd`, `pwd`, plus passthrough to your system shell
 - 📜 **History** — Persisted command history at `~/.thinknsh_history`
@@ -443,9 +443,9 @@ Create a new issue in the linked GitHub repository. If arguments are missing, th
 
 ---
 
-## `.tncproject` Auto-Boot
+## `tncproject` Auto-Boot
 
-Place a `.tncproject` file in your project root to auto-login and auto-join a room when `thinknsh` starts in that directory — no manual `login` or `join` needed.
+Place a `tncproject` file in your project root to auto-login and auto-join a room when `thinknsh` starts in that directory — no manual `login` or `join` needed.
 
 ```
 .tncproject
@@ -456,12 +456,12 @@ On startup the shell sends the encrypted config to the server, receives a shell 
 ```
   📄 tncproject found
      Room : room-abc123
-     File : /home/user/myproject/.tncproject
+     File : /home/user/myproject/tncproject
 
   ✅ Raman Singh → room "My Project Room"
 ```
 
-If `.tncproject` auth fails, the shell falls back to manual login.
+If `tncproject` auth fails, the shell falls back to manual login.
 
 ---
 
@@ -560,8 +560,8 @@ thinknsh> notify "Daily standup in 5 mins"
 thinknsh> status
 thinknsh> exit
 
-# .tncproject auto-boot (no login needed)
-cd ~/myproject         # contains .tncproject
+# tncproject auto-boot (no login needed)
+cd ~/myproject         # contains tncproject
 thinknsh               # auto-logs in + auto-joins room
 
 # Quick one-liners from CI / scripts

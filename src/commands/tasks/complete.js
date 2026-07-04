@@ -497,6 +497,14 @@ function judgeLocally(testConfig, result) {
         break;
       }
 
+      case 'tnc-build': {
+        const passed = result.exitCode === 0;
+        return {
+          passed,
+          reason: passed ? 'TNC Local CI pipeline passed' : 'TNC Local CI pipeline failed'
+        };
+      }
+
       default:
         return { passed: false, reason: `Unknown test type: ${type}` };
     }
@@ -716,6 +724,178 @@ const authConfig = { ...boardAuth, ...(testConfig.auth || {}) };
           exitCode: loadtestResult.failed_requests > 0 ? 1 : 0,
           output: loadtestResult,
           json: loadtestResult
+        };
+
+      } else if (testConfig.type === 'tnc-build') {
+        const fs = require('fs');
+        const path = require('path');
+        const { spawn } = require('child_process');
+
+        const projectRoot = process.cwd();
+        const workflowsDir = path.join(projectRoot, '.tnc/workflows');
+
+        if (!fs.existsSync(workflowsDir)) {
+          throw new Error('No .tnc/workflows directory found in project root.');
+        }
+
+        const files = fs.readdirSync(workflowsDir).filter(f => f.endsWith('.yml') || f.endsWith('.yaml'));
+        if (files.length === 0) {
+          throw new Error('No workflow files found in .tnc/workflows/');
+        }
+
+        const workflowFile = files[0];
+        console.log(chalk.dim(`  → Found workflow file: ${workflowFile}`));
+        const content = fs.readFileSync(path.join(workflowsDir, workflowFile), 'utf8');
+
+        // Parse steps
+        const lines = content.split('\n');
+        let workflowName = workflowFile;
+        let steps = [];
+        let currentStepName = '';
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (line.startsWith('name:')) {
+            workflowName = line.substring(5).trim().replace(/['"]/g, '');
+            continue;
+          }
+          if (line.startsWith('-')) {
+            const cleaned = line.substring(1).trim();
+            if (cleaned.startsWith('name:')) {
+              currentStepName = cleaned.substring(5).trim().replace(/['"]/g, '');
+            } else if (cleaned.startsWith('run:')) {
+              let runCmd = cleaned.substring(4).trim();
+              if ((runCmd.startsWith('"') && runCmd.endsWith('"')) || (runCmd.startsWith("'") && runCmd.endsWith("'"))) {
+                runCmd = runCmd.substring(1, runCmd.length - 1);
+              }
+              if (runCmd === '|') {
+                let block = [];
+                let j = i + 1;
+                while (j < lines.length) {
+                  const next = lines[j];
+                  const match = next.match(/^(\s+)(.*)/);
+                  if (match && match[1].length > 4) {
+                    block.push(next.trim());
+                    j++;
+                  } else {
+                    break;
+                  }
+                }
+                runCmd = block.join('\n');
+                i = j - 1;
+              }
+              steps.push({
+                name: currentStepName || `run: ${runCmd.substring(0, 30)}`,
+                run: runCmd
+              });
+              currentStepName = '';
+            }
+          } else if (line.startsWith('name:')) {
+            currentStepName = line.substring(5).trim().replace(/['"]/g, '');
+          } else if (line.startsWith('run:')) {
+            let runCmd = line.substring(4).trim();
+            if ((runCmd.startsWith('"') && runCmd.endsWith('"')) || (runCmd.startsWith("'") && runCmd.endsWith("'"))) {
+              runCmd = runCmd.substring(1, runCmd.length - 1);
+            }
+            if (runCmd === '|') {
+              let block = [];
+              let j = i + 1;
+              while (j < lines.length) {
+                const next = lines[j];
+                const match = next.match(/^(\s+)(.*)/);
+                if (match && match[1].length > 4) {
+                  block.push(next.trim());
+                  j++;
+                } else {
+                  break;
+                }
+              }
+              runCmd = block.join('\n');
+              i = j - 1;
+            }
+            steps.push({
+              name: currentStepName || `run: ${runCmd.substring(0, 30)}`,
+              run: runCmd
+            });
+            currentStepName = '';
+          }
+        }
+
+        if (steps.length === 0) {
+          throw new Error('No steps found in the workflow file.');
+        }
+
+        console.log(chalk.cyan(`\n🚀 [TNC Actions] Starting Local Workflow: "${workflowName}"\n`));
+
+        const stepResults = [];
+        let overallPassed = true;
+        let logsBuffer = '';
+
+        for (let s = 0; s < steps.length; s++) {
+          const step = steps[s];
+          console.log(chalk.cyan(`⚙️ [Step ${s+1}/${steps.length}] "${step.name}"`));
+          console.log(chalk.gray(`$ ${step.run}`));
+
+          // Run command shell execution
+          const exitCode = await new Promise((resolve) => {
+            const shellCmd = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+            const shellArgs = process.platform === 'win32' ? ['/s', '/c', step.run] : ['-c', step.run];
+            
+            const proc = spawn(shellCmd, shellArgs, {
+              cwd: projectRoot,
+              env: { ...process.env, PATH: process.env.PATH, PUPPETEER_SKIP_DOWNLOAD: 'true' }
+            });
+
+            proc.stdout.on('data', (chunk) => {
+              const chunkStr = chunk.toString();
+              process.stdout.write(chunkStr);
+              logsBuffer += chunkStr;
+            });
+
+            proc.stderr.on('data', (chunk) => {
+              const chunkStr = chunk.toString();
+              process.stderr.write(chalk.red(chunkStr));
+              logsBuffer += chunkStr;
+            });
+
+            proc.on('close', (code) => {
+              resolve(code);
+            });
+          });
+
+          const stepPassed = (exitCode === 0);
+          stepResults.push({
+            name: step.name,
+            command: step.run,
+            exitCode,
+            passed: stepPassed
+          });
+
+          if (!stepPassed) {
+            overallPassed = false;
+            console.log(chalk.red(`\n❌ Step "${step.name}" failed with exit code: ${exitCode}. Aborting.\n`));
+            break;
+          } else {
+            console.log(chalk.green(`\n✅ Step "${step.name}" passed successfully.\n`));
+          }
+        }
+
+        result = {
+          exitCode: overallPassed ? 0 : 1,
+          stdout: logsBuffer,
+          stderr: '',
+          output: {
+            workflow: workflowName,
+            status: overallPassed ? 'passed' : 'failed',
+            stepsCount: steps.length,
+            stepsRun: stepResults
+          },
+          json: {
+            workflow: workflowName,
+            status: overallPassed ? 'passed' : 'failed',
+            stepsCount: steps.length,
+            stepsRun: stepResults
+          }
         };
 
       } else {
