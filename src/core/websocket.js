@@ -25,6 +25,7 @@ class WebSocketManager extends EventEmitter {
         this._authToken     = null;
         this._handlersSetup = false;
         this._serverReady   = false;
+        this._shellRef      = config._shellRef || null;  // ref to Shell instance for api access
     }
 
     // ─── Connect ──────────────────────────────────────────────────────────────
@@ -76,6 +77,47 @@ class WebSocketManager extends EventEmitter {
                 });
                 this.socket.on('task:verdict', (data) => {
                     this.emit('task:verdict', data);
+                });
+
+                // Triggered by TNC server when user clicks "run test" on browser (production)
+                // CLI reads .tnc/workflows/*.yml from process.cwd() (client's project dir) and runs it locally
+                this.socket.on('task:run-local', async (data) => {
+                    try {
+                        const chalk        = require('chalk');
+                        const { runLocal } = require('./local-runner');
+                        const taskId       = data.taskId;
+                        const shellRef     = this._shellRef;
+                        const api          = shellRef ? shellRef.api : null;
+
+                        if (!api) {
+                            console.log(chalk.red('\n❌ CLI not authenticated. Run: login\n'));
+                            return;
+                        }
+
+                        // Fetch task info (webhookSecret) from TNC API
+                        let task;
+                        try {
+                            task = await api._request('GET', `/thinknsh/${taskId}/cli`);
+                        } catch (e) {
+                            console.log(chalk.red(`\n❌ Could not fetch task info: ${e.message}\n`));
+                            return;
+                        }
+
+                        if (!task || !task.webhookSecret) {
+                            console.log(chalk.red('\n❌ Task has no webhookSecret — cannot submit result.\n'));
+                            return;
+                        }
+
+                        await runLocal({
+                            taskId,
+                            webhookSecret: task.webhookSecret,
+                            apiUrl: this.config.serverUrl || 'https://thinkncollab.com',
+                            chalk,
+                            shell: shellRef,
+                        });
+                    } catch (err) {
+                        console.error('task:run-local error:', err.message);
+                    }
                 });
 
                 this.socket.on('reconnect', () => {

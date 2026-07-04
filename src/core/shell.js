@@ -43,7 +43,7 @@ class ThinkNCollabShell extends EventEmitter {
 
         fs.ensureDirSync(this.config.configDir);
 
-        this.ws = new WebSocketManager(this.config.websocket);
+        this.ws = new WebSocketManager({ ...this.config.websocket, _shellRef: this });
         this.currentDir = process.cwd();
         this.username = os.userInfo().username;
         this.history = [];
