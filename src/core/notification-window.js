@@ -86,6 +86,15 @@ function printNotification(data) {
             console.log(`${ts} 📢 ${color(`${data.title}: ${data.message}`)}`);
             break;
         }
+        case 'verdict':
+            beep();
+            {
+                const color = data.passed ? chalk.green : chalk.red;
+                const icon = data.passed ? '✅' : '❌';
+                const label = data.passed ? 'PASSED' : 'FAILED';
+                console.log(`${ts} ${icon} ${color(`Build Verdict [${label}]`)}: ${chalk.white(data.reason || '')}`);
+            }
+            break;
         case 'typing':
             beep();
             process.stdout.write(`\r${chalk.dim(`✏️  ${data.username} is typing...    `)}`);
