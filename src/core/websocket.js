@@ -114,6 +114,14 @@ class WebSocketManager extends EventEmitter {
                             apiUrl: this.config.serverUrl || 'https://thinkncollab.com',
                             chalk,
                             shell: shellRef,
+                            onLog: (logData) => {
+                                // Emit log stream to server via the terminal socket
+                                this.socket.emit('task:log', {
+                                    taskId,
+                                    boardId: task.boardId,
+                                    ...logData
+                                });
+                            }
                         });
                     } catch (err) {
                         console.error('task:run-local error:', err.message);

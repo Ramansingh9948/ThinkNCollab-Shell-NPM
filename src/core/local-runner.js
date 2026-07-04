@@ -115,7 +115,7 @@ async function submitResult(apiUrl, taskId, webhookSecret, result) {
  * Main entry — triggered when server emits task:run-local to CLI socket.
  * @param {Object} opts  { taskId, webhookSecret, apiUrl, chalk, shell }
  */
-async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell }) {
+async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell, onLog }) {
   const projectRoot  = process.cwd();
   const workflowsDir = path.join(projectRoot, '.tnc', 'workflows');
 
@@ -147,6 +147,16 @@ async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell }) {
   console.log(chalk.cyan(`\n🚀 [TNC Actions] Running: "${workflowName}" (${workflowFile})`));
   console.log(chalk.dim(`   ${steps.length} step(s)\n`));
 
+  // Stream initial workflow setup
+  if (onLog) {
+    onLog({
+      workflowName,
+      file: workflowFile,
+      steps: steps.map(st => ({ name: st.name })),
+      data: `\n🚀 [TNC Actions] Starting Local Workflow: "${workflowName}" (${workflowFile})\n`
+    });
+  }
+
   // 2. Execute each step
   const stepResults = [];
   let overallPassed = true;
@@ -157,9 +167,27 @@ async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell }) {
     console.log(chalk.cyan(`⚙️  [Step ${s + 1}/${steps.length}] "${step.name}"`));
     console.log(chalk.gray(`$ ${step.run}\n`));
 
+    const stepHeader = `\n⚙️ [Step ${s + 1}/${steps.length}] "${step.name}"\n$ ${step.run}\n`;
+    logsBuffer += stepHeader;
+
+    if (onLog) {
+      onLog({
+        stepIndex: s,
+        state: 'running',
+        data: stepHeader
+      });
+    }
+
     const onData = chunk => {
       process.stdout.write(chunk);
       logsBuffer += chunk;
+      if (onLog) {
+        onLog({
+          stepIndex: s,
+          state: 'running',
+          data: chunk
+        });
+      }
     };
 
     const exitCode  = await runStep(step.run, projectRoot, onData);
@@ -169,9 +197,27 @@ async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell }) {
 
     if (stepPassed) {
       console.log(chalk.green(`\n✅ "${step.name}" passed\n`));
+      const passMsg = `\n✅ Step "${step.name}" passed successfully.\n`;
+      logsBuffer += passMsg;
+      if (onLog) {
+        onLog({
+          stepIndex: s,
+          state: 'passed',
+          data: passMsg
+        });
+      }
     } else {
       overallPassed = false;
       console.log(chalk.red(`\n❌ "${step.name}" failed (exit ${exitCode}). Aborting.\n`));
+      const failMsg = `\n❌ Step "${step.name}" failed with exit code: ${exitCode}. Aborting workflow.\n`;
+      logsBuffer += failMsg;
+      if (onLog) {
+        onLog({
+          stepIndex: s,
+          state: 'failed',
+          data: failMsg
+        });
+      }
       break;
     }
   }
