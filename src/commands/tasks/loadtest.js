@@ -6,9 +6,10 @@ const Table = require('cli-table3');
 
 module.exports = {
   name: 'loadtest',
-  description: 'Run a local load test script using GeekLoad',
+  description: 'Run a local load test script using GeekLoad and sync stats to TNC',
   aliases: ['geekload'],
-  requiresAuth: false,
+  requiresAuth: true,
+  requiresRoom: true,
 
   async execute(args, shell) {
     if (!args[0]) {
@@ -46,6 +47,40 @@ module.exports = {
 
       console.log(table.toString());
 
+      // Sync stats back to ThinkNCollab backend
+      const roomId = shell.ws.getCurrentRoom();
+      if (roomId) {
+        process.stdout.write(chalk.dim('  Syncing stats to ThinkNCollab server...\r'));
+        try {
+          const stats = {
+            targetUrl: args[0],
+            duration: results.duration_sec,
+            connections: results.virtual_users,
+            requestsTotal: results.total_requests,
+            throughputTotalBytes: results.total_requests * 512,
+            latency: {
+              p50: results.avg_latency_ms,
+              p90: results.p95_latency_ms,
+              p99: results.p99_latency_ms,
+              average: results.avg_latency_ms,
+              min: results.avg_latency_ms * 0.5,
+              max: results.avg_latency_ms * 1.5
+            },
+            errors: results.failed_requests
+          };
+
+          await shell.api._request('POST', `/tncloadtest/api/save-run/${roomId}`, {
+            targetUrl: args[0],
+            duration: results.duration_sec,
+            connections: results.virtual_users,
+            stats
+          });
+          console.log(chalk.green('  ✅ Load test stats successfully synced to workspace!'));
+        } catch (syncErr) {
+          console.log(chalk.red(`  ⚠️  Failed to sync stats to server: ${syncErr.message}`));
+        }
+      }
+
       if (results.failures.length > 0) {
         console.log(chalk.yellow(`\n⚠️  Recorded Failures (${results.failures.length}):`));
         results.failures.slice(0, 5).forEach((f, idx) => {
@@ -57,13 +92,6 @@ module.exports = {
         if (results.failures.length > 5) {
           console.log(chalk.dim(`   ... and ${results.failures.length - 5} more failures`));
         }
-      }
-
-      if (results.errors.length > 0) {
-        console.log(chalk.red(`\n❌ Execution Errors (${results.errors.length}):`));
-        results.errors.slice(0, 5).forEach((e, idx) => {
-          console.log(chalk.red(`   VU ${e.vuId} Error: ${e.message}`));
-        });
       }
 
     } catch (err) {

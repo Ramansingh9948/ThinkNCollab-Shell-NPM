@@ -58,6 +58,7 @@ const load = (path, category) => {
         // load('./tasks/comment',     'tasks');
         load('./tasks/create-task', 'tasks');
         load('./tasks/loadtest',    'tasks');
+        load('./tasks/build',       'tasks');
         
 
         // Terminal
