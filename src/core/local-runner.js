@@ -249,7 +249,7 @@ function resolveExecutionEngine(cmd, cwd) {
     }
   }
 
-  // ── TIER 2: WSL2 (Windows only) ──────────────────────────────────────────
+  // ── TIER 2: WSL2 (Windows only — Native Ubuntu on Windows) ───────────────
   if (isWin) {
     let hasWsl = false;
     try {
@@ -257,11 +257,18 @@ function resolveExecutionEngine(cmd, cwd) {
       hasWsl = true;
     } catch (e) {}
     if (hasWsl) {
+      // Translate Windows path (C:\Users\...) to WSL path (/mnt/c/Users/...)
+      const wslCwd = cwd
+        .replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`)
+        .replace(/\\/g, '/');
+
       const escaped = normalizedCmd.replace(/"/g, '\\"');
+      const wslCmd = `wsl -d Ubuntu bash -c "cd \\"${wslCwd}\\" && ${escaped}"`;
+
       return {
         shell: 'cmd.exe',
-        args: ['/s', '/c', `wsl -d Ubuntu bash -c "${escaped}"`],
-        engineName: 'Ubuntu (WSL2)'
+        args: ['/s', '/c', wslCmd],
+        engineName: 'Ubuntu Linux (WSL2 Engine)'
       };
     }
   }
