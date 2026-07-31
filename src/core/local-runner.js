@@ -605,9 +605,9 @@ async function runLocal({ taskId, webhookSecret, apiUrl, repoUrl, repoBranch, wo
 /**
  * Main entry for CI/CD triggered from dashboard via websocket (cicd:trigger / cicd:run-dispatch)
  */
-async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, chalk, api, socket }) {
+async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, localPath, chalk, api, socket }) {
   const startTime = Date.now();
-  const projectRoot = process.cwd();
+  const localRoot = process.cwd();
 
   const emitLog = (type, text) => {
     const timestamp = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
@@ -616,12 +616,55 @@ async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, chalk, 
     }
   };
 
+  // ── Resolve GitHub remote URL & Clone Fresh ──────────────────────────────
+  let projectRoot = localRoot;
+  let cloneDir    = null;
+
+  try {
+    const { execSync } = require('child_process');
+    let remoteUrl = (localPath && localPath.startsWith('http')) ? localPath.trim() : null;
+    let branch    = 'main';
+
+    if (!remoteUrl) {
+      try {
+        remoteUrl = execSync('git remote get-url origin', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
+        branch    = execSync('git rev-parse --abbrev-ref HEAD', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
+      } catch (e) {
+        remoteUrl = null;
+      }
+    }
+
+    if (remoteUrl) {
+      const os = require('os');
+      cloneDir = path.join(os.tmpdir(), `tnc-cicd-${runId || Date.now()}-${Date.now()}`);
+      fs.mkdirSync(cloneDir, { recursive: true });
+
+      console.log(chalk.cyan(`\n🐙 [TNC Checkout] Cloning fresh from GitHub...`));
+      console.log(chalk.dim(`   Remote : ${remoteUrl}`));
+      console.log(chalk.dim(`   Branch : ${branch}`));
+      console.log(chalk.dim(`   Target : ${cloneDir}\n`));
+
+      emitLog('system', `🐙 [TNC Checkout] Cloning fresh project from GitHub (${remoteUrl})...`);
+
+      execSync(
+        `git clone --depth=1 --branch "${branch}" "${remoteUrl}" "${cloneDir}"`,
+        { stdio: 'pipe' }
+      );
+
+      projectRoot = cloneDir;
+      emitLog('system', `✅ Fresh GitHub clone ready.`);
+    }
+  } catch (e) {
+    emitLog('system', `⚠️ GitHub clone notice: using workspace (${e.message?.split('\n')[0]})`);
+    projectRoot = localRoot;
+  }
+
   console.log(chalk.cyan(`\n📡 Cloud Dashboard triggered CI/CD workflow: ${workflowFile || 'universal-polyglot-ci.yml'}`));
   console.log(chalk.dim(`   Project: ${projectRoot}`));
 
-  emitLog('system', `🚀 [thinkncollab-shell] Triggered local execution for workflow "${workflowFile || 'universal-polyglot-ci.yml'}"...`);
+  emitLog('system', `🚀 [thinkncollab-shell] Triggered execution for workflow "${workflowFile || 'universal-polyglot-ci.yml'}"...`);
   emitLog('system', `💻 Host: ${process.platform} (${process.arch}) · Node ${process.version}`);
-  emitLog('system', `📁 CWD: ${projectRoot}`);
+  emitLog('system', `📁 Workspace: ${projectRoot}`);
 
   let content = workflowYaml || '';
   if (!content) {
@@ -732,6 +775,13 @@ async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, chalk, 
       }).catch(() => {});
       console.log(chalk.green('  ✓ Logs synced successfully!\n'));
     } catch (err) {}
+  }
+
+  // Cleanup temp clone directory if created
+  if (cloneDir && fs.existsSync(cloneDir)) {
+    try {
+      fs.rmSync(cloneDir, { recursive: true, force: true });
+    } catch (e) {}
   }
 }
 

@@ -302,6 +302,7 @@ class WebSocketManager extends EventEmitter {
                     roomId: data.roomId || this.roomId,
                     workflowFile: data.workflowFile || 'universal-polyglot-ci.yml',
                     workflowYaml: data.workflowYaml || '',
+                    localPath: data.localPath || '',
                     apiUrl: api ? api.baseURL : this.config.serverUrl,
                     chalk,
                     api,
