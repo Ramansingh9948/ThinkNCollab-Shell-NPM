@@ -366,9 +366,9 @@ async function submitResult(apiUrl, taskId, webhookSecret, result) {
 
 /**
  * Main entry — triggered when server emits task:run-local to CLI socket.
- * @param {Object} opts  { taskId, webhookSecret, apiUrl, chalk, shell }
+ * @param {Object} opts  { taskId, webhookSecret, apiUrl, repoUrl, repoBranch, workflowFile, chalk, shell, onLog }
  */
-async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell, onLog }) {
+async function runLocal({ taskId, webhookSecret, apiUrl, repoUrl, repoBranch, workflowFile, chalk, shell, onLog }) {
   const localRoot    = process.cwd();
   const workflowsDir = path.join(localRoot, '.tnc', 'workflows');
 
@@ -376,19 +376,36 @@ async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell, onLog }) 
   console.log(chalk.dim(`   Local CWD: ${localRoot}`));
 
   // ── Resolve GitHub remote URL ─────────────────────────────────────────────
+  // Priority:
+  //   1. repoUrl passed from web dashboard (task object) — EXACT project to test
+  //   2. Git remote URL from local directory (fallback)
+  //   3. Local directory as-is (no git)
   let projectRoot = localRoot;
   let cloneDir    = null;
 
   try {
     const { execSync } = require('child_process');
-    const remoteUrl = execSync('git remote get-url origin', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
-    const shortHash = execSync('git rev-parse --short HEAD', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
-    const branch    = execSync('git rev-parse --abbrev-ref HEAD', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
+
+    // Priority 1: Web dashboard told us which repo to clone
+    let remoteUrl = repoUrl || null;
+    let branch    = repoBranch || 'main';
+    let shortHash = 'latest';
+
+    // Priority 2: Read from local git config if web didn't provide repo
+    if (!remoteUrl) {
+      try {
+        remoteUrl = execSync('git remote get-url origin', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
+        branch    = execSync('git rev-parse --abbrev-ref HEAD', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
+        shortHash = execSync('git rev-parse --short HEAD',     { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
+      } catch (e) {
+        remoteUrl = null;
+      }
+    }
 
     if (remoteUrl) {
       // Clone into a fresh temp directory — exactly like GitHub Actions runner
-      const os      = require('os');
-      cloneDir      = path.join(os.tmpdir(), `tnc-runner-${taskId}-${Date.now()}`);
+      const os = require('os');
+      cloneDir  = path.join(os.tmpdir(), `tnc-runner-${taskId}-${Date.now()}`);
       fs.mkdirSync(cloneDir, { recursive: true });
 
       console.log(chalk.cyan(`\n🐙 [TNC Checkout] Cloning from GitHub...`));
@@ -422,14 +439,19 @@ async function runLocal({ taskId, webhookSecret, apiUrl, chalk, shell, onLog }) 
     return;
   }
 
-  const workflowFile = files[0];
-  const content      = fs.readFileSync(path.join(workflowsDir, workflowFile), 'utf8');
+
+  // Use workflowFile from web trigger if provided, otherwise pick first yml found
+  const selectedWorkflowFile = workflowFile
+    ? files.find(f => f === workflowFile) || files[0]
+    : files[0];
+  const content      = fs.readFileSync(path.join(workflowsDir, selectedWorkflowFile), 'utf8');
   const { workflowName, steps } = parseWorkflow(content);
 
   if (!steps.length) {
-    console.log(chalk.red(`❌ No runnable steps found in ${workflowFile}`));
+    console.log(chalk.red(`❌ No runnable steps found in ${selectedWorkflowFile}`));
     return;
   }
+
 
   const activeEngine = resolveExecutionEngine('', projectRoot).engineName;
   console.log(chalk.cyan(`\n🚀 [TNC Actions] Running: "${workflowName}" (${workflowFile})`));

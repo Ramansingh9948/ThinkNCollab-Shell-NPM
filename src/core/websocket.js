@@ -111,7 +111,11 @@ class WebSocketManager extends EventEmitter {
                         await runLocal({
                             taskId,
                             webhookSecret: task.webhookSecret,
-                            apiUrl: this.config.serverUrl || 'https://thinkncollab.com',
+                            apiUrl:        this.config.serverUrl || 'https://thinkncollab.com',
+                            // Pass repo info from TNC task — runner will clone this exact repo
+                            repoUrl:       task.repoUrl      || task.githubUrl || task.repo_url || null,
+                            repoBranch:    task.branch       || task.repoBranch || 'main',
+                            workflowFile:  task.workflowFile || task.workflow   || null,
                             chalk,
                             shell: shellRef,
                             onLog: (logData) => {
@@ -123,6 +127,7 @@ class WebSocketManager extends EventEmitter {
                                 });
                             }
                         });
+
                     } catch (err) {
                         console.error('task:run-local error:', err.message);
                     }
