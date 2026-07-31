@@ -276,6 +276,40 @@ class WebSocketManager extends EventEmitter {
         this.socket.on('error', (data) => {
             this.emit('serverError', data);
         });
+
+        // Triggered by TNC server when user clicks "Run in Browser" or triggers CI/CD pipeline
+        const activeRunIds = new Set();
+        const handleCicdRun = async (data) => {
+            if (!data || !data.runId) return;
+            if (activeRunIds.has(data.runId)) return;
+            activeRunIds.add(data.runId);
+
+            try {
+                const chalk        = require('chalk');
+                const { runCicdLocal } = require('./local-runner');
+                const shellRef     = this._shellRef;
+                const api          = shellRef ? shellRef.api : null;
+                
+                console.log(chalk.cyan(`\n🚀 [thinkncollab-shell] CI/CD execution request received for room: ${data.roomId || this.roomId}`));
+
+                await runCicdLocal({
+                    runId: data.runId,
+                    roomId: data.roomId || this.roomId,
+                    workflowFile: data.workflowFile || 'universal-polyglot-ci.yml',
+                    workflowYaml: data.workflowYaml || '',
+                    apiUrl: api ? api.baseURL : this.config.serverUrl,
+                    chalk,
+                    api,
+                    socket: this.socket
+                });
+            } catch (err) {
+                console.error('\n❌ Error in CI/CD local execution:', err);
+            } finally {
+                setTimeout(() => activeRunIds.delete(data.runId), 30000);
+            }
+        };
+
+        this.socket.on('cicd:run-dispatch', handleCicdRun);
     }
 
     // ─── Join room ────────────────────────────────────────────────────────────
