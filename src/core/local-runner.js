@@ -662,8 +662,10 @@ async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, localPa
   console.log(chalk.cyan(`\n📡 Cloud Dashboard triggered CI/CD workflow: ${workflowFile || 'universal-polyglot-ci.yml'}`));
   console.log(chalk.dim(`   Project: ${projectRoot}`));
 
+  const activeEngine = resolveExecutionEngine('', projectRoot).engineName;
+
   emitLog('system', `🚀 [thinkncollab-shell] Triggered execution for workflow "${workflowFile || 'universal-polyglot-ci.yml'}"...`);
-  emitLog('system', `💻 Host: ${process.platform} (${process.arch}) · Node ${process.version}`);
+  emitLog('system', `🟢 Runner Engine: ${activeEngine}`);
   emitLog('system', `📁 Workspace: ${projectRoot}`);
 
   let content = workflowYaml || '';
