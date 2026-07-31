@@ -791,6 +791,8 @@ async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, localPa
   if (cloneDir && fs.existsSync(cloneDir)) {
     try {
       fs.rmSync(cloneDir, { recursive: true, force: true });
+      console.log(chalk.dim(`  🗑️  Isolated sandbox deleted: ${cloneDir}\n`));
+      emitLog('system', `🗑️  Isolated sandbox deleted & cleaned up.`);
     } catch (e) {}
   }
 }
