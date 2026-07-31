@@ -114,7 +114,7 @@ function parseWorkflow(ymlContent) {
  *  3. WSL2 (Windows only) → wsl -d Ubuntu
  *  4. Native host fallback (last resort, logs warning)
  */
-function ensureDockerUbuntuImage(execSync) {
+function ensureDockerUbuntuImage(execSync, emitLog) {
   // Check if ubuntu:22.04 image already exists locally
   try {
     const images = execSync('docker images -q ubuntu:22.04', { encoding: 'utf8', stdio: 'pipe' }).trim();
@@ -122,11 +122,15 @@ function ensureDockerUbuntuImage(execSync) {
   } catch (e) {}
 
   // Pull ubuntu:22.04 from Docker Hub
-  console.log('\n🐧 [TNC Runner] ubuntu:22.04 not found locally. Pulling from Docker Hub...');
-  console.log('   This is a one-time download (~30 MB compressed). Subsequent runs will be instant.\n');
+  const pullMsg = '📥 [Ubuntu Engine] Downloading ubuntu:22.04 OS image (~30 MB compressed)...';
+  console.log(`\n${pullMsg}`);
+  if (emitLog) emitLog('system', pullMsg);
+
   try {
     execSync('docker pull ubuntu:22.04', { stdio: 'inherit' });
-    console.log('\n✅ ubuntu:22.04 ready.\n');
+    const okMsg = '✅ [Ubuntu Engine] ubuntu:22.04 OS image download complete.';
+    console.log(`\n${okMsg}\n`);
+    if (emitLog) emitLog('system', okMsg);
     return true;
   } catch (e) {
     console.error('❌ Failed to pull ubuntu:22.04:', e.message);
@@ -661,6 +665,8 @@ async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, localPa
 
   console.log(chalk.cyan(`\n📡 Cloud Dashboard triggered CI/CD workflow: ${workflowFile || 'universal-polyglot-ci.yml'}`));
   console.log(chalk.dim(`   Project: ${projectRoot}`));
+
+  emitLog('system', `📥 [Ubuntu Engine] Initializing isolated Ubuntu Linux runtime environment...`);
 
   const activeEngine = resolveExecutionEngine('', projectRoot).engineName;
 
