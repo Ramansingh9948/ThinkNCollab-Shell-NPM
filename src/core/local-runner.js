@@ -176,6 +176,11 @@ function tryStartDockerDaemon(execSync) {
 function resolveExecutionEngine(cmd, cwd) {
   const { execSync } = require('child_process');
 
+  // Ensure /opt/homebrew/bin is in PATH for Mac environments
+  if (process.platform === 'darwin' && !process.env.PATH?.includes('/opt/homebrew/bin')) {
+    process.env.PATH = `/opt/homebrew/bin:${process.env.PATH || ''}`;
+  }
+
   // ── Command Normalization (runs regardless of engine) ────────────────────
   let normalizedCmd = cmd
     .replace(/\bpython\b/g, 'python3')
@@ -183,6 +188,11 @@ function resolveExecutionEngine(cmd, cwd) {
     .replace(/\bpip3 install\b/g, 'pip install')
     // npm ci fails if package-lock.json doesn't exist → safe fallback
     .replace(/\bnpm ci\b/g, 'npm ci 2>/dev/null || npm install');
+
+  // Guard npm commands if package.json does not exist in workspace
+  if (normalizedCmd.trim().startsWith('npm ') || normalizedCmd.includes(' npm ')) {
+    normalizedCmd = `if [ -f package.json ]; then ${normalizedCmd}; else echo "ℹ️  No package.json found in workspace — skipping npm step"; fi`;
+  }
 
   // Skip engine overhead for empty/probe calls
   if (!normalizedCmd.trim()) {
@@ -256,29 +266,39 @@ function resolveExecutionEngine(cmd, cwd) {
 
   // ── TIER 3: Lima Ubuntu VM (Mac without Docker) ──────────────────────────
   // Lima = Lightweight Ubuntu VM for macOS (by Canonical, open-source)
-  // Install: brew install lima && limactl start template://ubuntu
   if (process.platform === 'darwin') {
-    let hasLima = false;
-    try {
-      const { execSync } = require('child_process');
-      execSync('limactl list --json 2>/dev/null', { stdio: 'ignore' });
-      hasLima = true;
-    } catch (e) {}
-
-    if (hasLima) {
-      // Check if ubuntu VM is running
+    let limactlBin = null;
+    const fs = require('fs');
+    if (fs.existsSync('/opt/homebrew/bin/limactl')) {
+      limactlBin = '/opt/homebrew/bin/limactl';
+    } else {
       try {
-        const { execSync } = require('child_process');
-        const list = execSync('limactl list --json 2>/dev/null', { encoding: 'utf8' });
-        const vms = list.trim().split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-        const ubuntuVm = vms.find(vm => vm.name === 'ubuntu' && vm.status === 'Running')
-                      || vms.find(vm => vm.status === 'Running');
+        execSync('limactl --version', { stdio: 'ignore' });
+        limactlBin = 'limactl';
+      } catch (e) {}
+    }
+
+    if (limactlBin) {
+      try {
+        const list = execSync(`${limactlBin} list --json 2>/dev/null`, { encoding: 'utf8' });
+        const vms  = list.trim().split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        let ubuntuVm = vms.find(vm => vm.name === 'ubuntu' || vm.name.includes('ubuntu')) || vms[0];
+
         if (ubuntuVm) {
+          // Auto-start Ubuntu VM if it is currently Stopped
+          if (ubuntuVm.status !== 'Running') {
+            console.log(`\n🐧 [TNC Engine] Booting Ubuntu VM (${ubuntuVm.name})...`);
+            try {
+              execSync(`${limactlBin} start ${ubuntuVm.name} --tty=false`, { stdio: 'ignore' });
+              console.log(`✅ Ubuntu VM (${ubuntuVm.name}) booted successfully.\n`);
+            } catch (err) {}
+          }
+
           const escaped = normalizedCmd.replace(/"/g, '\\"');
           return {
             shell: '/bin/bash',
-            args: ['-c', `limactl shell ${ubuntuVm.name} bash -c "${escaped}"`],
-            engineName: `Ubuntu VM (Lima: ${ubuntuVm.name})`
+            args: ['-c', `${limactlBin} shell ${ubuntuVm.name} bash -c "${escaped}"`],
+            engineName: `Ubuntu Linux VM (Lima: ${ubuntuVm.name})`
           };
         }
       } catch (e) {}
@@ -369,29 +389,21 @@ async function submitResult(apiUrl, taskId, webhookSecret, result) {
  * @param {Object} opts  { taskId, webhookSecret, apiUrl, repoUrl, repoBranch, workflowFile, chalk, shell, onLog }
  */
 async function runLocal({ taskId, webhookSecret, apiUrl, repoUrl, repoBranch, workflowFile, chalk, shell, onLog }) {
-  const localRoot    = process.cwd();
-  const workflowsDir = path.join(localRoot, '.tnc', 'workflows');
+  const localRoot = process.cwd();
 
   console.log(chalk.cyan(`\n📡 TNC Build triggered for task: ${taskId}`));
   console.log(chalk.dim(`   Local CWD: ${localRoot}`));
 
   // ── Resolve GitHub remote URL ─────────────────────────────────────────────
-  // Priority:
-  //   1. repoUrl passed from web dashboard (task object) — EXACT project to test
-  //   2. Git remote URL from local directory (fallback)
-  //   3. Local directory as-is (no git)
   let projectRoot = localRoot;
   let cloneDir    = null;
 
   try {
     const { execSync } = require('child_process');
-
-    // Priority 1: Web dashboard told us which repo to clone
     let remoteUrl = repoUrl || null;
     let branch    = repoBranch || 'main';
     let shortHash = 'latest';
 
-    // Priority 2: Read from local git config if web didn't provide repo
     if (!remoteUrl) {
       try {
         remoteUrl = execSync('git remote get-url origin', { cwd: localRoot, encoding: 'utf8', stdio: 'pipe' }).trim();
@@ -403,7 +415,6 @@ async function runLocal({ taskId, webhookSecret, apiUrl, repoUrl, repoBranch, wo
     }
 
     if (remoteUrl) {
-      // Clone into a fresh temp directory — exactly like GitHub Actions runner
       const os = require('os');
       cloneDir  = path.join(os.tmpdir(), `tnc-runner-${taskId}-${Date.now()}`);
       fs.mkdirSync(cloneDir, { recursive: true });
@@ -426,7 +437,9 @@ async function runLocal({ taskId, webhookSecret, apiUrl, repoUrl, repoBranch, wo
     projectRoot = localRoot;
   }
 
-  // 1. Find workflow file
+  // 1. Find workflow file (evaluated in projectRoot, NOT localRoot)
+  const workflowsDir = path.join(projectRoot, '.tnc', 'workflows');
+
   if (!fs.existsSync(workflowsDir)) {
     console.log(chalk.red(`❌ No .tnc/workflows/ directory found in ${projectRoot}`));
     console.log(chalk.yellow(`   Create one: mkdir -p .tnc/workflows && touch .tnc/workflows/tnc-ci.yml`));
