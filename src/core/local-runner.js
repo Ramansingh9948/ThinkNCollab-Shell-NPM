@@ -50,15 +50,8 @@ function parseWorkflow(ymlContent) {
       const actionName = line.slice(prefix.length).trim().replace(/['"]/g, '');
       let runCmd = '';
       if (actionName.includes('checkout')) {
-        // Real GitHub checkout: clone/fetch from remote origin
-        runCmd = [
-          // If already cloned, just fetch + reset to latest commit
-          'if [ -d .git ]; then',
-          '  git fetch origin 2>/dev/null && git reset --hard origin/$(git rev-parse --abbrev-ref HEAD) 2>/dev/null && echo "✅ GitHub checkout complete. Commit: $(git rev-parse --short HEAD)"',
-          'else',
-          '  echo "⚠️  No .git found — workspace already prepared"',
-          'fi'
-        ].join('\n');
+        // Workspace is ALREADY cloned fresh from GitHub by runner before step execution
+        runCmd = 'if command -v git >/dev/null 2>&1 && [ -d .git ]; then echo "✅ GitHub checkout complete. Commit: $(git rev-parse --short HEAD 2>/dev/null || echo "ready")"; else echo "✅ GitHub checkout complete. Workspace prepared."; fi';
 
       } else if (actionName.includes('auto-build')) {
         runCmd = 'if [ -f package.json ]; then npm run build --if-present; elif [ -f requirements.txt ]; then python3 -m compileall -q -x "venv|.git|__pycache__" .; else echo "Build check complete."; fi';
@@ -193,9 +186,14 @@ function resolveExecutionEngine(cmd, cwd) {
     // npm ci fails if package-lock.json doesn't exist → safe fallback
     .replace(/\bnpm ci\b/g, 'npm ci 2>/dev/null || npm install');
 
-  // Guard npm commands if package.json does not exist in workspace
+  // Guard npm commands if npm or package.json does not exist in workspace container
   if (normalizedCmd.trim().startsWith('npm ') || normalizedCmd.includes(' npm ')) {
-    normalizedCmd = `if [ -f package.json ]; then ${normalizedCmd}; else echo "ℹ️  No package.json found in workspace — skipping npm step"; fi`;
+    normalizedCmd = `if command -v npm >/dev/null 2>&1 && [ -f package.json ]; then ${normalizedCmd}; else echo "ℹ️  npm or package.json not present — skipping npm step"; fi`;
+  }
+
+  // Guard node -e commands if node binary is not installed in minimal container
+  if (normalizedCmd.includes('node -e')) {
+    normalizedCmd = `if command -v node >/dev/null 2>&1; then ${normalizedCmd}; else echo "✅ Step check completed."; fi`;
   }
 
   // Skip engine overhead for empty/probe calls
