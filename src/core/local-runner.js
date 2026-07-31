@@ -298,11 +298,15 @@ function resolveExecutionEngine(cmd, cwd) {
             } catch (err) {}
           }
 
-          const escaped = normalizedCmd.replace(/"/g, '\\"');
+          const formattedCwd = cwd.replace(/\\/g, '/');
+          const escaped = normalizedCmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          // Ephemeral container execution: nerdctl run --rm creates container, runs step, then DELETES container
+          const nerdCmd = `${limactlBin} shell ${ubuntuVm.name} nerdctl run --rm -v "${formattedCwd}:/workspace" -w /workspace ubuntu:22.04 bash -c "${escaped}"`;
+
           return {
             shell: '/bin/bash',
-            args: ['-c', `${limactlBin} shell ${ubuntuVm.name} bash -c "${escaped}"`],
-            engineName: `Ubuntu Linux VM (Lima: ${ubuntuVm.name})`
+            args: ['-c', nerdCmd],
+            engineName: 'Ubuntu 22.04 (Ephemeral Isolated Container)'
           };
         }
       } catch (e) {}
@@ -420,7 +424,7 @@ async function runLocal({ taskId, webhookSecret, apiUrl, repoUrl, repoBranch, wo
 
     if (remoteUrl) {
       const os = require('os');
-      cloneDir  = path.join(os.tmpdir(), `tnc-runner-${taskId}-${Date.now()}`);
+      cloneDir  = path.join(os.homedir(), '.tnc', 'sandboxes', `tnc-runner-${taskId}-${Date.now()}`);
       fs.mkdirSync(cloneDir, { recursive: true });
 
       console.log(chalk.cyan(`\n🐙 [TNC Checkout] Cloning from GitHub...`));
@@ -640,7 +644,7 @@ async function runCicdLocal({ runId, roomId, workflowFile, workflowYaml, localPa
 
     if (remoteUrl) {
       const os = require('os');
-      cloneDir = path.join(os.tmpdir(), `tnc-cicd-${runId || Date.now()}-${Date.now()}`);
+      cloneDir = path.join(os.homedir(), '.tnc', 'sandboxes', `tnc-cicd-${runId || Date.now()}-${Date.now()}`);
       fs.mkdirSync(cloneDir, { recursive: true });
 
       console.log(chalk.cyan(`\n🐙 [TNC Checkout] Cloning fresh from GitHub...`));
